@@ -377,3 +377,40 @@ PROGRAMS.push(
     ],
   },
 );
+
+// ================= ÉCHAUFFEMENT & RETOUR AU CALME =================
+// Ajoutés automatiquement au début / à la fin des séances (réglable dans Réglages)
+EXERCISES.push(
+  {
+    id: "e_bras", nom: "Rotations des bras", groupe: "Étirements", type: "temps", role: "warmup",
+    img: "Arm_Circles", materiel: "Aucun", muscles: ["epaules"], secondaires: ["pecs", "dos_milieu"],
+    etapes: ["Bras tendus sur les côtés.", "Fais des petits cercles puis des grands cercles.", "Change de sens à mi-temps."],
+    conseils: ["Réveille les épaules avant de pousser ou tirer."], erreurs: ["Aller trop vite d'entrée."],
+  },
+  {
+    id: "e_hanches", nom: "Rotations de hanches", groupe: "Étirements", type: "temps", role: "warmup",
+    img: "Standing_Hip_Circles", materiel: "Aucun", muscles: ["fessiers"], secondaires: ["lombaires", "adducteurs"],
+    etapes: ["Mains sur les hanches, pieds largeur d'épaules.", "Fais de grands cercles avec le bassin.", "Change de sens à mi-temps."],
+    conseils: ["Prépare les hanches et le bas du dos."], erreurs: ["Bloquer la respiration."],
+  },
+  {
+    id: "e_rotation", nom: "Rotations du buste", groupe: "Étirements", type: "temps", role: "warmup",
+    img: "Torso_Rotation", materiel: "Aucun", muscles: ["obliques"], secondaires: ["lombaires", "dos_milieu"],
+    etapes: ["Debout, bras croisés ou tendus devant.", "Tourne le buste à gauche puis à droite, bassin fixe.", "Mouvement fluide et contrôlé."],
+    conseils: ["Augmente l'amplitude petit à petit."], erreurs: ["Tourner le bassin avec le buste."],
+  },
+  {
+    id: "e_inchworm", nom: "Inchworm (chenille)", groupe: "Étirements", type: "pdc", role: "warmup",
+    img: "Inchworm", materiel: "Aucun", muscles: ["ischios", "epaules"], secondaires: ["abdos", "pecs"],
+    etapes: ["Debout, penche-toi et pose les mains au sol.", "Avance les mains jusqu'à la position de pompe.", "Ramène les pieds vers les mains en petits pas, puis relève-toi."],
+    conseils: ["Échauffement complet : ischios, épaules, gainage."], erreurs: ["Plier fort les genoux."],
+  },
+  {
+    id: "marche_inclinee", nom: "Marche inclinée", groupe: "Cardio", type: "cardio", role: "cooldown", machine: true, marque: "Tapis Technogym",
+    img: "Walking_Treadmill", materiel: "Tapis de course", muscles: ["cardio", "fessiers"], secondaires: ["mollets", "ischios"],
+    etapes: ["Règle l'inclinaison entre 8 et 12 %.", "Marche à 4,5 – 5,5 km/h sans te tenir aux barres.", "Garde le buste droit et fais de grands pas."],
+    conseils: ["Brûle beaucoup de calories sans fatiguer les jambes pour la prochaine séance.", "Parfait en fin de séance : on reste en « zone 2 » (tu peux parler)."],
+    erreurs: ["Se tenir aux barres (ça annule l'effet de la pente).", "Pente trop forte dès le début."],
+  },
+);
+const WARMUP = [["e_bras", 1, "30 s"], ["e_hanches", 1, "30 s"], ["e_rotation", 1, "30 s"], ["e_inchworm", 1, "5"], ["s_worlds", 1, "5/côté"]];

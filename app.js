@@ -1,5 +1,5 @@
 // GymTrack — appli de suivi muscu / nutrition / corps.
-const APP_VERSION = "5 · 25/10/2026";
+const APP_VERSION = "6 · 25/10/2026";
 // Tout est stocké en local sur le téléphone (localStorage). Aucun compte, aucun serveur, 100% gratuit.
 
 // ============================================================
@@ -47,6 +47,7 @@ const DEFAULT_STATE = {
   healthSent: {},
   defis: {},
   defiRec: {},
+  reminders: [],
   settings: { rest: 90, glass: 250, waterGoal: "", health: { on: false }, defiOffset: 0 },
 };
 let state = load();
@@ -88,6 +89,27 @@ function nutritionGoals() {
   const lip = Math.round(0.9 * w);
   const gluc = Math.max(0, Math.round((kcal - prot * 4 - lip * 9) / 4));
   return { bmr: Math.round(bmr), tdee: Math.round(tdee), kcal, prot, lip, gluc };
+}
+
+// Objectif calorique ADAPTATIF : le budget est calculé sur la semaine (lundi → dimanche).
+// Si tu manges plus un jour, l'excédent est retiré des jours suivants (et inversement), réparti sur les jours restants.
+// Un jour sans rien de noté compte comme « à l'objectif ».
+const MIN_KCAL = () => (state.profile.sexe === "f" ? 1200 : 1500);
+function dayKcal(d) { const e = state.food[d]; return e && e.length ? foodTotals(e).k : null; }
+function weekDays(d) { const ws = weekStart(parseDay(d)); return [...Array(7)].map((_, i) => { const x = new Date(ws); x.setDate(x.getDate() + i); return dayStr(x); }); }
+function dayGoals(d) {
+  const g = nutritionGoals();
+  if (!g) return null;
+  const days = weekDays(d), idx = days.indexOf(d);
+  const eatenBefore = days.slice(0, idx).reduce((a, x) => a + (dayKcal(x) ?? g.kcal), 0);
+  const weekEaten = eatenBefore + (dayKcal(d) || 0);
+  const info = { base: g.kcal, weekBudget: g.kcal * 7, weekEaten, days, idx, adaptive: state.settings.adaptive !== false };
+  if (!info.adaptive) return { ...g, ...info, delta: 0 };
+  const raw = (g.kcal * 7 - eatenBefore) / (7 - idx);
+  const min = Math.max(MIN_KCAL(), Math.round(g.kcal * 0.75)), max = Math.round(g.kcal * 1.25);
+  const kcal = Math.round(Math.min(max, Math.max(min, raw)) / 10) * 10;
+  const gluc = Math.max(0, Math.round((kcal - g.prot * 4 - g.lip * 9) / 4));
+  return { ...g, ...info, kcal, gluc, delta: kcal - g.kcal, clamped: raw < min || raw > max };
 }
 
 function foodTotals(entries) {
@@ -280,6 +302,7 @@ const ROUTES = {
   type: viewWorkout,
   sante: viewHealth,
   defi: viewDefi,
+  notifs: viewNotifs,
   rangs: viewRanks,
   progres: (id) => (id ? viewProgress(id) : viewProgressList()),
   programmes: () => viewTrain("programmes"),
@@ -288,7 +311,7 @@ const ROUTES = {
   corps: viewBody,
   reglages: viewSettings,
 };
-const TAB_OF = { agenda: "progres", rangs: "progres", seances: "progres", seance: "progres", live: "entrainer", exos: "entrainer", exo: "entrainer", programmes: "entrainer", programme: "entrainer", type: "entrainer", reglages: "", sante: "" };
+const TAB_OF = { agenda: "progres", rangs: "progres", seances: "progres", seance: "progres", live: "entrainer", exos: "entrainer", exo: "entrainer", programmes: "entrainer", programme: "entrainer", type: "entrainer", reglages: "", sante: "", notifs: "" };
 const TOP_LEVEL = ["accueil", "entrainer", "exos", "programmes", "defi", "agenda", "rangs", "seances", "progres", "nutrition", "corps"];
 // Onglets internes de « Progrès »
 const progSeg = (k) => `<div class="seg" style="margin-bottom:14px">${[["progres", "Exercices"], ["rangs", "Rangs"], ["agenda", "Agenda"]]
@@ -329,7 +352,7 @@ window.addEventListener("hashchange", route);
 // ============================================================
 function viewHome() {
   setTitle("GymTrack");
-  const g = nutritionGoals();
+  const g = dayGoals(dayStr());
   const today = foodTotals(state.food[dayStr()] || []);
   const w = currentWeight();
   const h = new Date().getHours();
@@ -576,7 +599,7 @@ function viewProgressList() {
 }
 function progressListHtml() {
   const done = {};
-  for (const s of state.sessions) for (const e of s.exercises) if (exById(e.exId)) done[e.exId] = s.date > (done[e.exId] || "") ? s.date : done[e.exId];
+  for (const s of state.sessions) for (const e of s.exercises) if (exById(e.exId) && exById(e.exId).groupe !== "Étirements") done[e.exId] = s.date > (done[e.exId] || "") ? s.date : done[e.exId];
   const ids = Object.keys(done).sort((a, b) => done[b].localeCompare(done[a]));
   if (!ids.length) {
     return `<div class="empty"><span class="big">📈</span>Pas encore de données.<br>Note tes séries, tes reps et tes charges pendant tes séances : ici tu verras pour chaque exercice si tu progresses.</div>
@@ -658,11 +681,41 @@ function viewSessionDetail(id) {
 // ============================================================
 function newSet(prev) { return { kg: prev?.kg ?? "", reps: prev?.reps ?? "", sec: prev?.sec ?? "", min: prev?.min ?? "", km: prev?.km ?? "", done: false }; }
 
-function startSession(name, items, extra = {}) {
+// Séance « cardio » ou « étirements » : pas d'échauffement ni de marche inclinée ajoutés
+const isCardioLike = (ex) => ex.groupe === "Cardio" || ex.groupe === "Étirements" || ex.muscles.includes("cardio");
+function sessionKind(items, cat) {
+  if (cat === "Cardio / HIIT" || cat === "Étirements") return "cardio";
+  if (items.length && items.filter((it) => isCardioLike(exById(it.exId))).length >= items.length / 2) return "cardio";
+  return "muscu";
+}
+// Échauffement au début + marche inclinée à la fin (réglables dans Réglages)
+function addWarmupCooldown(items, cat) {
+  if (sessionKind(items, cat) === "cardio") return items;
+  const out = [...items];
+  if (state.settings.warmup !== false) out.unshift(...WARMUP.map(([exId, sets, target]) => ({ exId, sets, target, rest: 0, role: "warmup" })));
+  const last = items[items.length - 1];
+  const endsWithCardio = last && exById(last.exId).type === "cardio";
+  if (state.settings.walk !== false && !endsWithCardio) {
+    const w = state.settings.walkMin || 12;
+    out.push({ exId: "marche_inclinee", sets: 1, target: `${w} min · pente 10 % · 5 km/h`, rest: 0, role: "cooldown" });
+  }
+  return out;
+}
+// Valeurs déjà remplies pour l'échauffement et la marche (il suffit de cocher ✓)
+function presetSet(it) {
+  const ex = exById(it.exId), t = String(it.target || "");
+  if (it.role === "cooldown") return { ...newSet(), min: String(state.settings.walkMin || 12) };
+  if (it.role !== "warmup") return newSet();
+  if (ex.type === "temps") return { ...newSet(), sec: (t.match(/(\d+)\s*s\b/) || [0, "30"])[1] };
+  return { ...newSet(), reps: (t.match(/\d+/) || ["5"])[0] };
+}
+
+function startSession(name, items, extra = {}, cat) {
   if (state.current && !confirm("Une séance est déjà en cours. La remplacer ?")) return;
+  const all = addWarmupCooldown(items, cat);
   state.current = {
     id: uid(), name, start: Date.now(), date: dayStr(), ...extra,
-    exercises: items.map((it) => ({ exId: it.exId, target: it.target || "", rest: it.rest || state.settings.rest, sets: Array.from({ length: it.sets || 1 }, () => newSet()) })),
+    exercises: all.map((it) => ({ exId: it.exId, role: it.role, target: it.target || "", rest: it.rest ?? state.settings.rest, sets: Array.from({ length: it.sets || 1 }, () => presetSet(it)) })),
   };
   save();
   go("#/live");
@@ -687,7 +740,10 @@ function viewLive() {
     const fields = FIELDS[ex.type];
     const prev = lastPerf(ex.id);
     const nDone = e.sets.filter((s) => s.done).length;
-    html += `<div class="card ex-live ${nDone === e.sets.length ? "all-done" : ""}">
+    if (e.role === "warmup" && c.exercises[i - 1]?.role !== "warmup") html += `<div class="phase">🔥 Échauffement · 5 min <span class="muted small">— coche chaque exo une fois fait</span></div>`;
+    if (!e.role && (c.exercises[i - 1]?.role === "warmup")) html += `<div class="phase">💪 Séance</div>`;
+    if (e.role === "cooldown") html += `<div class="phase">🚶 Retour au calme</div>`;
+    html += `<div class="card ex-live ${e.role ? "phase-" + e.role : ""} ${nDone === e.sets.length ? "all-done" : ""}">
       <div class="row">
         <img src="${imgUrl(ex)}" alt="" data-act="ex-info" data-id="${ex.id}" style="width:52px;height:52px;border-radius:10px;object-fit:cover;background:#fff;cursor:pointer">
         <div class="grow"><b>${esc(ex.nom)}</b> <span class="muted small">${nDone}/${e.sets.length}</span>
@@ -703,8 +759,8 @@ function viewLive() {
           ${fields.map(([k]) => `<td><input inputmode="decimal" enterkeyhint="next" autocomplete="off" data-in="set" data-i="${i}" data-j="${j}" data-k="${k}" value="${esc(s[k])}" placeholder="${ps && num(ps[k]) ? esc(ps[k]) : "–"}"></td>`).join("")}
           <td><button class="check" data-act="set-done" data-i="${i}" data-j="${j}">✓</button></td></tr>`;
       }).join("")}</table>
-      <div class="row" style="margin-top:8px"><button class="btn sm grow" data-act="add-set" data-i="${i}">＋ Série</button>
-      ${e.sets.length > 1 ? `<button class="btn sm" data-act="del-set" data-i="${i}">− Série</button>` : ""}</div>
+      ${e.role ? "" : `<div class="row" style="margin-top:8px"><button class="btn sm grow" data-act="add-set" data-i="${i}">＋ Série</button>
+      ${e.sets.length > 1 ? `<button class="btn sm" data-act="del-set" data-i="${i}">− Série</button>` : ""}</div>`}
     </div>`;
   });
 
@@ -798,7 +854,7 @@ function saveSession() {
   const prs = [];
   const exercises = c.exercises.map((e) => {
     const ex = exById(e.exId);
-    return { exId: e.exId, sets: e.sets.filter((s) => isFilled(ex.type, s)).map((s) => { const o = {}; FIELDS[ex.type].forEach(([k]) => (o[k] = num(s[k]))); return o; }) };
+    return { exId: e.exId, ...(e.role ? { role: e.role } : {}), sets: e.sets.filter((s) => isFilled(ex.type, s)).map((s) => { const o = {}; FIELDS[ex.type].forEach(([k]) => (o[k] = num(s[k]))); return o; }) };
   }).filter((e) => e.sets.length);
   // Détection des records personnels
   for (const e of exercises) {
@@ -1107,7 +1163,7 @@ function viewNutrition() {
   const d = ui.foodDay;
   const entries = state.food[d] || [];
   const t = foodTotals(entries);
-  const g = nutritionGoals();
+  const g = dayGoals(d);
   const isToday = d === dayStr();
   const pct = g ? Math.min(1, t.k / g.kcal) : 0;
   const C = 2 * Math.PI * 52;
@@ -1121,11 +1177,12 @@ function viewNutrition() {
           stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - pct)}" transform="rotate(-90 60 60)"/>
         <text x="60" y="58" text-anchor="middle" fill="#f1f3f7" font-size="24" font-weight="800">${Math.round(t.k)}</text>
         <text x="60" y="78" text-anchor="middle" fill="#9aa1b1" font-size="12">kcal</text></svg>
-      <div class="grow">${g ? `<div class="muted small">Objectif ${g.kcal} kcal</div><div style="font-size:20px;font-weight:800">${g.kcal - Math.round(t.k) >= 0 ? `Reste ${g.kcal - Math.round(t.k)}` : `+${Math.round(t.k) - g.kcal} au-dessus`}</div>`
+      <div class="grow">${g ? `<div class="muted small">Objectif ${g.kcal} kcal${g.delta ? ` <span class="adj ${g.delta < 0 ? "minus" : "plus"}">${g.delta > 0 ? "+" : ""}${g.delta}</span>` : ""}</div><div style="font-size:20px;font-weight:800">${g.kcal - Math.round(t.k) >= 0 ? `Reste ${g.kcal - Math.round(t.k)}` : `+${Math.round(t.k) - g.kcal} au-dessus`}</div>`
         : `<p class="muted small">Remplis ton profil dans l'onglet <a href="#/corps">Corps</a> pour avoir ton objectif calorique.</p>`}
         <div class="small" style="margin-top:6px">P ${Math.round(t.p)} g · G ${Math.round(t.c)} g · L ${Math.round(t.f)} g</div></div></div>
       ${g ? `<div style="margin-top:8px">${macroBars(t, g, false)}</div>` : ""}
       ${state.settings.health?.on && state.settings.health.kcal !== false && t.k ? `<button class="btn sm block" style="margin-top:12px" data-act="health-kcal" data-d="${d}">❤️ Envoyer ${Math.max(0, Math.round(t.k) - (state.healthSent[d] || 0))} kcal à Santé</button>` : ""}</div>
+    ${g ? weekBudgetCard(g, d) : ""}
     ${waterCard(d)}`;
 
   for (const [k, label] of Object.entries(MEALS)) {
@@ -1141,11 +1198,33 @@ function viewNutrition() {
   after(() => {
     const days = [...Array(7)].map((_, i) => { const x = parseDay(d); x.setDate(x.getDate() - 6 + i); return dayStr(x); });
     const vals = days.map((x) => Math.round(foodTotals(state.food[x] || []).k));
-    const ds = [{ label: "Calories", data: vals, type: "bar", colors: vals.map((v) => (g && v > g.kcal * 1.05 ? CH.orange : CH.accent) + (v ? "dd" : "33")) }];
-    if (g) ds.push({ label: "Objectif", data: days.map(() => g.kcal), color: "#8b92a3", dashed: true });
+    const ds = [{ label: "Calories", data: vals, type: "bar", colors: vals.map((v, i) => (g && v > dayGoals(days[i]).kcal * 1.05 ? CH.orange : CH.accent) + (v ? "dd" : "33")) }];
+    if (g) ds.push({ label: "Objectif", data: days.map((x) => dayGoals(x).kcal), color: "#8b92a3", dashed: true });
     lineChart("kcalChart", days.map((x) => parseDay(x).toLocaleDateString("fr-FR", { weekday: "short" })), ds, { zero: true, unit: "kcal", legend: false });
   });
   return html;
+}
+
+// Carte « budget de la semaine »
+function weekBudgetCard(g, d) {
+  const L = ["L", "M", "M", "J", "V", "S", "D"], today = dayStr();
+  const pct = Math.min(100, (g.weekEaten / g.weekBudget) * 100);
+  const msg = !g.adaptive ? "Objectif fixe chaque jour."
+    : g.delta < 0 ? `Tu as mangé plus que prévu les jours d'avant : <b style="color:var(--text)">${-g.delta} kcal de moins</b> aujourd'hui pour rester dans ton budget de la semaine.`
+    : g.delta > 0 ? `Tu as mangé moins que prévu les jours d'avant : tu peux manger <b style="color:var(--text)">${g.delta} kcal de plus</b> aujourd'hui.`
+    : "Tu es pile dans ton budget : objectif normal aujourd'hui.";
+  return `<div class="card">
+    <div class="row between"><h3>📅 Budget de la semaine</h3><span class="small"><b>${Math.round(g.weekEaten).toLocaleString("fr-FR")}</b> <span class="muted">/ ${g.weekBudget.toLocaleString("fr-FR")} kcal</span></span></div>
+    <div class="progress ${g.weekEaten > g.weekBudget ? "over" : ""}" style="margin-top:10px"><div style="width:${pct}%"></div></div>
+    <div class="week-days">${g.days.map((x, i) => {
+      const k = dayKcal(x), tg = dayGoals(x).kcal, future = x > today;
+      const cls = future ? "future" : k == null ? "empty" : k > tg * 1.05 ? "over" : k < tg * 0.9 ? "under" : "ok";
+      return `<div class="wd ${cls} ${x === d ? "sel" : ""}"><span>${L[i]}</span><b>${k == null ? (future ? tg : "–") : Math.round(k)}</b><small>${future ? "prévu" : "/ " + tg}</small></div>`;
+    }).join("")}</div>
+    <p class="muted small" style="margin:10px 0 0">${msg}${g.clamped ? (g.idx < 6 ? " On ne descend jamais sous un minimum sain : le reste est étalé sur les jours suivants." : " On ne descend jamais sous un minimum sain : la semaine prochaine repart à zéro.") : ""}</p>
+    <label class="switch-row" style="padding-bottom:0"><span class="small"><b>Objectif adaptatif</b><br><span class="muted">Ajuste chaque jour selon ce que tu as mangé avant dans la semaine</span></span>
+      <input type="checkbox" class="switch" data-in="adaptive" ${g.adaptive ? "checked" : ""}></label>
+  </div>`;
 }
 
 let scanner = null;
@@ -1372,10 +1451,17 @@ function bodyModal(entry) {
 // ============================================================
 function viewSettings() {
   setTitle("Réglages");
-  return `<a class="card row health-link" href="#/sante"><span style="font-size:28px">❤️</span><div class="grow"><b>Apple Santé</b>
+  return `<a class="card row health-link" href="#/notifs"><span style="font-size:28px">🔔</span><div class="grow"><b>Notifications de motivation</b>
+      <div class="muted small">${state.reminders.filter((r) => r.on).length ? `${state.reminders.filter((r) => r.on).length} rappel(s) programmé(s)` : "Programme des rappels : motivation, séance, eau, défi…"}</div></div><span class="arrow">›</span></a>
+    <a class="card row health-link" href="#/sante"><span style="font-size:28px">❤️</span><div class="grow"><b>Apple Santé</b>
       <div class="muted small">${state.settings.health?.on ? "Activé : eau, poids, séances et calories envoyés à Santé" : "Envoie ton eau, ton poids et tes séances dans l'app Santé de l'iPhone"}</div></div><span class="arrow">›</span></a>
     <div class="card stack"><h2>⏱️ Repos par défaut</h2>
       <label class="field">Durée du chrono de repos (secondes)<input data-in="rest" inputmode="numeric" value="${state.settings.rest}"></label></div>
+    <div class="card list-card"><label class="switch-row"><span><b>🔥 Échauffement au début</b><br><span class="muted small">5 min de mobilité ajoutées à chaque séance (sauf cardio et étirements)</span></span>
+        <input type="checkbox" class="switch" data-in="setting-bool" data-k="warmup" ${state.settings.warmup !== false ? "checked" : ""}></label>
+      <label class="switch-row"><span><b>🚶 Marche inclinée à la fin</b><br><span class="muted small">Ajoutée à chaque séance de muscu (sauf cardio)</span></span>
+        <input type="checkbox" class="switch" data-in="setting-bool" data-k="walk" ${state.settings.walk !== false ? "checked" : ""}></label>
+      <label class="field" style="padding:10px 0">Durée de la marche (minutes)<input data-in="setting" data-k="walkMin" inputmode="numeric" value="${esc(state.settings.walkMin || 12)}"></label></div>
     <div class="card stack"><h2>💧 Eau</h2>
       <div class="grid2"><label class="field">Taille d'un verre (ml)<input data-in="setting" data-k="glass" inputmode="numeric" value="${esc(state.settings.glass)}"></label>
       <label class="field">Objectif par jour (ml)<input data-in="setting" data-k="waterGoal" inputmode="numeric" value="${esc(state.settings.waterGoal)}" placeholder="auto : ${waterGoal()}"></label></div>
@@ -1407,9 +1493,15 @@ const ACTIONS = {
   // séances
   "start-free": () => startSession("Séance du " + new Date().toLocaleDateString("fr-FR", { weekday: "long" }), []),
   "start-program": (el) => startProgramDay(el.dataset.prog, +el.dataset.day),
-  "redo-session": (el) => { const s = state.sessions.find((x) => x.id === el.dataset.id); startSession(s.name, s.exercises.map((e) => ({ exId: e.exId, sets: e.sets.length }))); },
+  "redo-session": (el) => { const s = state.sessions.find((x) => x.id === el.dataset.id); startSession(s.name, s.exercises.filter((e) => !e.role).map((e) => ({ exId: e.exId, sets: e.sets.length }))); },
   "del-session": (el) => { if (!confirm("Supprimer cette séance ?")) return; state.sessions = state.sessions.filter((s) => s.id !== el.dataset.id); save(); go("#/agenda"); },
-  "pick-ex": () => pickExerciseModal((id) => { state.current.exercises.push({ exId: id, target: "", rest: state.settings.rest, sets: [newSet(), newSet(), newSet()] }); save(); route(); window.scrollTo(0, document.body.scrollHeight); }),
+  "pick-ex": () => pickExerciseModal((id) => {
+    const list = state.current.exercises, item = { exId: id, target: "", rest: state.settings.rest, sets: [newSet(), newSet(), newSet()] };
+    const end = list.length && list[list.length - 1].role === "cooldown" ? list.length - 1 : list.length;
+    list.splice(end, 0, item);
+    save(); route();
+    document.querySelectorAll(".ex-live")[end]?.scrollIntoView({ block: "center" });
+  }),
   "pick-grp": (el) => pickExerciseModal.onGroup(el.dataset.g),
   pick: (el) => pickExerciseModal.onPick(el.dataset.id),
   "add-to-live": (el) => {
@@ -1462,6 +1554,31 @@ const ACTIONS = {
   "set-program": (el) => { state.activeProgram = { id: el.dataset.id, next: 0 }; save(); route(); toast("Programme activé ⭐ Retrouve ta prochaine séance sur l'accueil"); },
   "unset-program": () => { state.activeProgram = null; save(); route(); },
 
+  // notifications
+  "notif-perm": async () => {
+    if (!("Notification" in window)) return toast("Pas de notifications ici : installe l'appli sur l'écran d'accueil");
+    const r = await Notification.requestPermission();
+    toast(r === "granted" ? "🔔 Notifications autorisées" : "Notifications refusées (modifiable dans les réglages de l'iPhone)");
+    route();
+  },
+  "notif-test": () => notify("💪 GymTrack", MOTIVATION[Math.floor(Math.random() * MOTIVATION.length)]),
+  "notif-edit": (el) => reminderModal(+el.dataset.i),
+  "notif-preset": (el) => { state.reminders.push({ id: uid(), ...structuredClone(PRESETS[+el.dataset.i]), text: "", on: true }); save(); route(); toast("Rappel ajouté ✅"); },
+  "rem-day": (el) => {
+    const d = +el.dataset.d, a = reminderModal.days;
+    reminderModal.days = a.includes(d) ? a.filter((x) => x !== d) : [...a, d].sort();
+    el.classList.toggle("on", reminderModal.days.includes(d));
+  },
+  "rem-save": (el) => {
+    const i = +el.dataset.i;
+    if (!reminderModal.days.length) return toast("Choisis au moins un jour");
+    const r = { id: i >= 0 ? state.reminders[i].id : uid(), type: $("remType").value, time: $("remTime").value || "18:00", days: reminderModal.days, text: $("remText").value.trim(), on: true };
+    if (i >= 0) state.reminders[i] = r; else state.reminders.push(r);
+    state.reminders.sort((a, b) => a.time.localeCompare(b.time));
+    save(); closeModal(); route();
+  },
+  "rem-del": (el) => { state.reminders.splice(+el.dataset.i, 1); save(); closeModal(); route(); },
+
   // défi
   "defi-check": (el) => defiToggle(+el.dataset.i),
   "defi-timer": (el) => defiTimerModal(+el.dataset.i),
@@ -1490,7 +1607,7 @@ const ACTIONS = {
   "w-cat": (el) => { ui.wCat = el.dataset.c; route(); },
   "start-workout": (el) => {
     const w = WORKOUTS.find((x) => x.id === el.dataset.id);
-    startSession(w.nom, w.ex.map(([exId, sets, reps, restS]) => ({ exId, sets, target: `${sets} × ${reps}`, rest: restS })));
+    startSession(w.nom, w.ex.map(([exId, sets, reps, restS]) => ({ exId, sets, target: `${sets} × ${reps}`, rest: restS })), {}, w.cat);
   },
 
   // eau
@@ -1618,6 +1735,9 @@ document.addEventListener("input", (e) => {
   }
 });
 document.addEventListener("change", (e) => {
+  if (e.target.dataset.in === "rem-on") { state.reminders[+e.target.dataset.i].on = e.target.checked; save(); return; }
+  if (e.target.dataset.in === "adaptive") { state.settings.adaptive = e.target.checked; save(); route(); return; }
+  if (e.target.dataset.in === "setting-bool") { state.settings[e.target.dataset.k] = e.target.checked; save(); return; }
   if (e.target.dataset.in === "health") {
     state.settings.health = { ...(state.settings.health || {}), [e.target.dataset.k]: e.target.checked };
     save(); route();
@@ -1711,3 +1831,4 @@ async function forceUpdate() {
 }
 if (!location.hash) location.replace("#/accueil");
 route();
+checkReminders();
