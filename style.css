@@ -354,3 +354,56 @@ input[type=range] { padding: 0; min-height: 30px; accent-color: var(--accent); b
   .stat b { font-size: 19px; }
   .hello h2 { font-size: 22px; }
 }
+
+/* ---------- Schéma anatomique ---------- */
+.bodymap { position: relative; cursor: zoom-in; }
+.zoom-hint { position: absolute; right: 8px; bottom: 6px; font-size: 11.5px; font-weight: 650; color: var(--muted); background: rgba(13,15,19,.75); padding: 3px 8px; border-radius: 8px; }
+.body-detail { background: radial-gradient(ellipse at center, #232836 0%, transparent 70%); border-radius: 14px; }
+.body-detail svg { width: 100%; height: auto; display: block; }
+.anat-list { list-style: none; padding: 0; margin: 12px 0 0; }
+.anat-list li { padding: 6px 0; border-bottom: 1px solid var(--line); }
+.anat-list li:last-child { border-bottom: 0; }
+
+/* ---------- Rangs ---------- */
+.rank-badge { flex: none; filter: drop-shadow(0 2px 6px rgba(0,0,0,.4)); }
+.rank-card { border-color: color-mix(in srgb, var(--rc, #555) 40%, var(--line)); background: linear-gradient(160deg, color-mix(in srgb, var(--rc, #555) 14%, var(--card)) 0%, var(--card) 60%); }
+.rank-bar { height: 8px; }
+.rank-ladder { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-top: 14px; text-align: center; }
+.rank-ladder div { display: flex; flex-direction: column; align-items: center; gap: 2px; opacity: .45; min-width: 0; }
+.rank-ladder div.on, .rank-ladder div.past { opacity: 1; }
+.rank-ladder div.on span { color: var(--text); font-weight: 800; }
+.rank-ladder span { font-size: 9.5px; font-weight: 650; color: var(--muted); }
+.rank-ladder small { font-size: 9px; color: var(--muted); white-space: nowrap; }
+.rank-card .rank-ladder { opacity: 1; }
+.rank-pill { display: inline-flex; align-items: center; gap: 3px; font-size: 11.5px; font-weight: 750; color: var(--rc); vertical-align: 2px; margin-left: 4px; }
+.rank-counts { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; margin-top: 8px; font-weight: 700; font-size: 14px; }
+.rank-counts span { display: inline-flex; align-items: center; gap: 3px; }
+
+/* ---------- Défi ---------- */
+.defi-hero { background: linear-gradient(160deg, #2b1a0e 0%, var(--card) 60%); border-color: #4a2e14; }
+.defi-hero .eyebrow { color: var(--orange); }
+.defi-hero.complete { background: linear-gradient(160deg, #222a14 0%, var(--card) 60%); border-color: #3b4a1a; }
+.defi-hero .progress > div { background: var(--orange); }
+.defi-hero.complete .progress > div { background: var(--accent); }
+.streak { display: flex; flex-direction: column; align-items: center; background: var(--card2); border-radius: 14px; padding: 6px 12px; flex: none; }
+.streak b { font-size: 24px; line-height: 1.1; color: var(--orange); }
+.streak span { font-size: 11px; color: var(--muted); }
+.small-streak { padding: 4px 10px; }
+.small-streak b { font-size: 20px; }
+.defi-item { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.defi-item:last-child { border-bottom: 0; }
+.defi-item .thumb { width: 56px; height: 56px; border-radius: 12px; object-fit: cover; background: #fff; flex: none; cursor: pointer; }
+.defi-target { font-size: 22px; font-weight: 800; color: var(--orange); line-height: 1.2; }
+.defi-target span { font-size: 13px; color: var(--muted); font-weight: 600; }
+.defi-item.ok .defi-target { color: var(--accent); }
+.defi-item.ok .defi-target::after { content: " ✓"; font-size: 15px; }
+.big-check { width: 52px; height: 52px; font-size: 24px; font-weight: 800; flex: none; }
+.defi-item.ok .big-check { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.defi-days { display: grid; grid-template-columns: repeat(14, 1fr); gap: 5px; }
+.defi-days span { aspect-ratio: 1; border-radius: 5px; background: var(--card2); }
+.defi-days span.half { background: rgba(255,159,67,.4); }
+.defi-days span.on { background: var(--orange); }
+.defi-days span.today { outline: 2px solid var(--blue); outline-offset: 1px; }
+.defi-mini { display: flex; align-items: center; gap: 12px; }
+.defi-flame { font-size: 28px; }
+.timer-big { font-size: 72px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -0.03em; margin: 10px 0; color: var(--orange); }

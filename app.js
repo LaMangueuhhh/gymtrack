@@ -1,5 +1,5 @@
 // GymTrack — appli de suivi muscu / nutrition / corps.
-const APP_VERSION = "4 · 25/10/2026";
+const APP_VERSION = "5 · 25/10/2026";
 // Tout est stocké en local sur le téléphone (localStorage). Aucun compte, aucun serveur, 100% gratuit.
 
 // ============================================================
@@ -45,7 +45,9 @@ const DEFAULT_STATE = {
   hidden: [],
   water: {},
   healthSent: {},
-  settings: { rest: 90, glass: 250, waterGoal: "", health: { on: false } },
+  defis: {},
+  defiRec: {},
+  settings: { rest: 90, glass: 250, waterGoal: "", health: { on: false }, defiOffset: 0 },
 };
 let state = load();
 
@@ -277,6 +279,8 @@ const ROUTES = {
   exo: viewExercise,
   type: viewWorkout,
   sante: viewHealth,
+  defi: viewDefi,
+  rangs: viewRanks,
   progres: (id) => (id ? viewProgress(id) : viewProgressList()),
   programmes: () => viewTrain("programmes"),
   programme: viewProgram,
@@ -284,8 +288,11 @@ const ROUTES = {
   corps: viewBody,
   reglages: viewSettings,
 };
-const TAB_OF = { seances: "agenda", seance: "agenda", live: "entrainer", exos: "entrainer", exo: "entrainer", programmes: "entrainer", programme: "entrainer", type: "entrainer", reglages: "", sante: "" };
-const TOP_LEVEL = ["accueil", "entrainer", "exos", "programmes", "agenda", "seances", "progres", "nutrition", "corps"];
+const TAB_OF = { agenda: "progres", rangs: "progres", seances: "progres", seance: "progres", live: "entrainer", exos: "entrainer", exo: "entrainer", programmes: "entrainer", programme: "entrainer", type: "entrainer", reglages: "", sante: "" };
+const TOP_LEVEL = ["accueil", "entrainer", "exos", "programmes", "defi", "agenda", "rangs", "seances", "progres", "nutrition", "corps"];
+// Onglets internes de « Progrès »
+const progSeg = (k) => `<div class="seg" style="margin-bottom:14px">${[["progres", "Exercices"], ["rangs", "Rangs"], ["agenda", "Agenda"]]
+  .map(([r, l]) => `<button class="${k === r ? "on" : ""}" data-act="go" data-to="#/${r}">${l}</button>`).join("")}</div>`;
 let ui = { exGroup: "Tous", exSearch: "", showHidden: false, foodDay: dayStr(), calMonth: dayStr().slice(0, 7), bodyMetric: "poids", progMetric: null, progFilter: "tous", period: "all", trainTab: "seances", wCat: "Tous" };
 
 function route() {
@@ -365,6 +372,11 @@ function viewHome() {
     <a class="stat" href="#/corps"><b>${w ? r1(w) : "–"}</b><span>kg</span></a>
   </div>`;
 
+  const df = defiOf(dayStr()), dStreak = defiStreak();
+  html += `<a class="card row defi-mini" href="#/defi"><span class="defi-flame">🔥</span><div class="grow"><b>${state.defis[dayStr()]?.complete ? "Défi du jour réussi !" : "Défi du jour"}</b>
+    <div class="muted small">${df.items.map((it) => exById(it.exId).nom).slice(0, 3).join(" · ")}…</div>
+    <div class="progress thin"><div style="width:${(df.done.length / df.items.length) * 100}%"></div></div></div>
+    <div class="streak small-streak"><b>${dStreak}</b><span>jour${dStreak > 1 ? "s" : ""}</span></div></a>`;
   html += waterCard(dayStr());
 
   html += `<a class="card nutri-mini" href="#/nutrition"><div class="row between"><h3>🍽️ Calories</h3><span><b>${Math.round(today.k)}</b> <span class="muted small">${g ? "/ " + g.kcal : ""} kcal</span></span></div>
@@ -437,6 +449,9 @@ function checkinCard() {
 
 function viewAgenda() {
   setTitle("Agenda");
+  return progSeg("agenda") + agendaHtml();
+}
+function agendaHtml() {
   const [y, m] = ui.calMonth.split("-").map(Number);
   const first = new Date(y, m - 1, 1);
   const nbDays = new Date(y, m, 0).getDate();
@@ -557,6 +572,9 @@ function sparkline(values) {
 
 function viewProgressList() {
   setTitle("Progrès");
+  return progSeg("progres") + progressListHtml();
+}
+function progressListHtml() {
   const done = {};
   for (const s of state.sessions) for (const e of s.exercises) if (exById(e.exId)) done[e.exId] = s.date > (done[e.exId] || "") ? s.date : done[e.exId];
   const ids = Object.keys(done).sort((a, b) => done[b].localeCompare(done[a]));
@@ -580,7 +598,7 @@ function viewProgressList() {
     const b = bestSet(ex.type, cur.sets), pb = prev && bestSet(ex.type, prev.sets);
     return `<div class="card prog-card" data-act="go" data-to="#/progres/${ex.id}">
       <div class="row"><img class="thumb" src="${imgUrl(ex)}" alt="" loading="lazy">
-        <div class="grow"><b>${esc(ex.nom)}</b>
+        <div class="grow"><b>${esc(ex.nom)}</b>${(() => { const ri = rankInfo(ex); return ri && ri.i >= 0 ? ` <span class="rank-pill" style="--rc:${RANKS[ri.i].c1}">${rankBadge(ri.i, 16)}${RANKS[ri.i].nom}</span>` : ""; })()}
           <div class="verdict ${v.cls}">${v.cls === "up" ? "▲" : v.cls === "down" ? "▼" : v.cls === "same" ? "＝" : "★"} ${esc(v.txt)}</div></div>
         ${spark}</div>
       <div class="small muted" style="margin-top:8px">Dernière (${fmtShort(cur.date)}) : <b style="color:var(--text)">${b ? setText(ex.type, b) : "–"}</b>${pb ? ` · Avant (${fmtShort(prev.date)}) : ${setText(ex.type, pb)}` : ""}</div>
@@ -790,11 +808,13 @@ function saveSession() {
     const now = exStats(ex.type, e.sets)[key] || 0;
     if (best > 0 && now > best) prs.push(ex.nom);
   }
+  const rankBefore = Object.fromEntries(exercises.map((e) => [e.exId, rankInfo(exById(e.exId))?.i ?? -1]));
   const s = {
     id: c.id, name: c.name || "Séance", date: c.date, start: c.start, duration: Math.round((Date.now() - c.start) / 1000),
     exercises, fatigue: finishModal.getFatigue(), feel: finishModal.getFeel(), notes: $("notesIn").value.trim(), programId: c.programId || null,
   };
   state.sessions.push(s);
+  const rankUps = exercises.map((e) => { const ex = exById(e.exId), ri = rankInfo(ex); return ri && ri.i > rankBefore[e.exId] && ri.i > 0 ? `${ex.nom} → ${RANKS[ri.i].nom}` : null; }).filter(Boolean);
   if (!visitOf(c.date)) state.visits.push({ id: uid(), date: c.date, arrivee: nowHM(new Date(c.start)), depart: nowHM(), note: "" });
   if (c.programId && state.activeProgram && state.activeProgram.id === c.programId) {
     const p = PROGRAMS.find((x) => x.id === c.programId);
@@ -806,7 +826,7 @@ function saveSession() {
   closeModal();
   go(`#/seance/${s.id}`);
   setTimeout(() => sendHealth("seance", Math.max(1, Math.round(s.duration / 60))), 700);
-  toast(prs.length ? `🏆 Nouveau record : ${prs.join(", ")} !` : "Séance enregistrée 💪", 3500);
+  toast(rankUps.length ? `🎖️ Nouveau rang ! ${rankUps.join(" · ")}` : prs.length ? `🏆 Nouveau record : ${prs.join(", ")} !` : "Séance enregistrée 💪", 4000);
 }
 
 // ============================================================
@@ -844,6 +864,8 @@ function exerciseDetailHtml(ex, withActions = true) {
     <div class="card"><h2>📋 Exécution</h2><ol class="steps">${ex.etapes.map((s) => `<li>${esc(s)}</li>`).join("")}</ol></div>
     <div class="card"><h2>✅ Conseils</h2><ul class="steps">${ex.conseils.map((s) => `<li>${esc(s)}</li>`).join("")}</ul></div>
     <div class="card"><h2>⚠️ Erreurs à éviter</h2><ul class="steps">${ex.erreurs.map((s) => `<li>${esc(s)}</li>`).join("")}</ul></div>
+    ${withActions && hasRank(ex) ? (() => { const ri = rankInfo(ex); return ri && !ri.noWeight ? `<a class="card row" href="#/progres/${ex.id}">${rankBadge(Math.max(0, ri.i), 40)}<div class="grow"><b>${ri.i < 0 ? "Pas encore classé" : "Rang " + RANKS[ri.i].nom}</b>
+      <div class="muted small">${ri.next != null ? `Prochain : ${RANKS[ri.i + 1].nom} à ${fmtRankVal(ri.next, ri.t.unit)}` : "Rang maximum"}</div></div><span class="arrow">›</span></a>` : ""; })() : ""}
     ${withActions ? `<div class="grid2"><a class="btn" href="#/progres/${ex.id}">📈 Ma progression</a>
       <button class="btn primary" data-act="add-to-live" data-id="${ex.id}">＋ À ma séance</button></div>` : ""}`;
 }
@@ -873,7 +895,7 @@ function viewProgress(id) {
   const metrics = METRICS[ex.type];
   const metric = metrics.find(([k]) => k === ui.progMetric) ? ui.progMetric : metrics[0][0];
   if (!hist.length) {
-    return `<div class="empty"><span class="big">📈</span>Pas encore de données pour cet exercice.<br>Fais-le dans une séance pour voir ta courbe !</div>
+    return `${rankCard(ex)}<div class="empty"><span class="big">📈</span>Pas encore de données pour cet exercice.<br>Fais-le dans une séance pour voir ta courbe !</div>
       <a class="btn block" href="#/exo/${id}">Voir la fiche de l'exercice</a>`;
   }
   const best = (k) => Math.max(...hist.map((h) => h.stats[k] || 0));
@@ -882,7 +904,7 @@ function viewProgress(id) {
   const pts = shown.length ? shown : hist.slice(-1);
   const first = pts[0].stats[metric] || 0, lastV = pts[pts.length - 1].stats[metric] || 0;
   const label = metrics.find(([k]) => k === metric)[1];
-  let html = `<div class="chips" style="margin-bottom:12px">${metrics.map(([k, l]) => `<button class="chip ${k === metric ? "on" : ""}" data-act="prog-metric" data-k="${k}">${l}</button>`).join("")}</div>
+  let html = `${rankCard(ex)}<div class="chips" style="margin-bottom:12px">${metrics.map(([k, l]) => `<button class="chip ${k === metric ? "on" : ""}" data-act="prog-metric" data-k="${k}">${l}</button>`).join("")}</div>
     <div class="card">
       ${kpiHead(fmtV(metric, lastV), (label.match(/\((.*)\)/) || [0, label.toLowerCase()])[1], pts.length > 1 ? lastV - first : null, pts.length > 1 ? `depuis le ${fmtShort(pts[0].date)}` : "refais-le pour voir ta courbe", ex.inverse && metric !== "volume")}
       <div class="chart-box"><canvas id="progChart"></canvas></div>
@@ -1440,6 +1462,30 @@ const ACTIONS = {
   "set-program": (el) => { state.activeProgram = { id: el.dataset.id, next: 0 }; save(); route(); toast("Programme activé ⭐ Retrouve ta prochaine séance sur l'accueil"); },
   "unset-program": () => { state.activeProgram = null; save(); route(); },
 
+  // défi
+  "defi-check": (el) => defiToggle(+el.dataset.i),
+  "defi-timer": (el) => defiTimerModal(+el.dataset.i),
+  "defi-test": (el) => defiTestModal(el.dataset.id),
+  "defi-test-save": (el) => {
+    const v = Math.round(num($("testIn").value));
+    if (!v) return toast("Indique un nombre");
+    const ex = exById(el.dataset.id), before = rankInfo(ex)?.i ?? -1;
+    (state.defiRec[ex.id] = state.defiRec[ex.id] || []).push({ d: dayStr(), v });
+    save(); closeModal(); route();
+    const after = rankInfo(ex)?.i ?? -1;
+    toast(after > before && after > 0 ? `🎖️ Nouveau rang ${RANKS[after].nom} sur ${ex.nom} !` : `Record noté : ${v} ${ex.type === "temps" ? "s" : "reps"}`, 3500);
+  },
+  "defi-lvl": (el) => {
+    const auto = Math.min(10, 1 + Math.floor(defiDoneDays().length / 3));
+    state.settings.defiOffset = Math.max(1 - auto, Math.min(10 - auto, (state.settings.defiOffset || 0) + +el.dataset.v));
+    save(); route();
+  },
+
+  // schéma anatomique détaillé
+  "body-zoom": (el) => { bodyZoom.ex = BODY_REG[+el.dataset.i]; bodyZoom.view = "front"; bodyZoom.all = false; bodyZoom(); },
+  "body-view": (el) => { bodyZoom.view = el.dataset.v; bodyZoom(); },
+  "body-all": () => { bodyZoom.all = !bodyZoom.all; bodyZoom(); },
+
   // entraîner
   "w-cat": (el) => { ui.wCat = el.dataset.c; route(); },
   "start-workout": (el) => {
@@ -1592,6 +1638,40 @@ document.addEventListener("change", (e) => {
     r.readAsText(e.target.files[0]);
   }
 });
+
+// ============================================================
+//  RANGS
+// ============================================================
+function viewRanks() {
+  setTitle("Rangs");
+  let html = progSeg("rangs");
+  if (!currentWeight()) html += `<div class="card"><p class="muted small" style="margin:0">⚖️ Indique ton poids dans <a href="#/corps">Corps</a> : les rangs des exos avec charge sont calculés par rapport à ton poids.</p></div>`;
+  const done = new Set([...state.sessions.flatMap((s) => s.exercises.map((e) => e.exId)), ...Object.keys(state.defiRec)]);
+  const rows = [...done].map(exById).filter(hasRank).map((ex) => ({ ex, ri: rankInfo(ex) })).filter((r) => r.ri && !r.ri.noWeight && r.ri.i >= 0)
+    .sort((a, b) => b.ri.i - a.ri.i || a.ex.nom.localeCompare(b.ex.nom));
+  if (rows.length) {
+    const avg = Math.floor(rows.reduce((a, r) => a + r.ri.i, 0) / rows.length);
+    const counts = RANKS.map((_, k) => rows.filter((r) => r.ri.i === k).length);
+    html += `<div class="card rank-card center" style="--rc:${RANKS[avg].c1}">${rankBadge(avg, 84)}
+      <p class="eyebrow" style="color:var(--muted);margin-top:8px">Rang global</p><h2 style="color:${RANKS[avg].c1};font-size:26px">${RANKS[avg].nom}</h2>
+      <div class="rank-counts">${RANKS.map((rk, k) => counts[k] ? `<span>${rankBadge(k, 18)} ${counts[k]}</span>` : "").join("")}</div></div>
+      <div class="card list-card">${rows.map(({ ex, ri }) => `<div class="list-item" data-act="go" data-to="#/progres/${ex.id}">${rankBadge(ri.i, 38)}
+        <div class="grow"><b>${esc(ex.nom)}</b><div class="small" style="color:${RANKS[ri.i].c1}">${RANKS[ri.i].nom} · ${fmtRankVal(ri.value, ri.t.unit)}</div>
+        ${ri.next != null ? `<div class="progress thin"><div style="width:${ri.pct}%;background:${RANKS[ri.i + 1].c1}"></div></div><div class="muted small">${RANKS[ri.i + 1].nom} à ${fmtRankVal(ri.next, ri.t.unit)}</div>` : ""}</div></div>`).join("")}</div>`;
+  } else {
+    html += `<div class="empty"><span class="big">🎖️</span>Pas encore de rang.<br>Fais des séances ou un test dans l'onglet Défi pour être classé.</div>`;
+  }
+  html += `<div class="section-title">Les rangs</div><div class="card"><div class="rank-ladder">${RANKS.map((rk, k) => `<div>${rankBadge(k, 30)}<span>${rk.nom}</span></div>`).join("")}</div>
+    <p class="muted small" style="margin-bottom:0">Exos avec charge : ton 1RM estimé comparé à ton poids de corps (ex : développé couché à 1× ton poids = Or). Poids du corps : tes reps max en une série. Gainage : ton meilleur temps.</p></div>`;
+  return html;
+}
+
+function bodyZoom() {
+  const ex = bodyZoom.ex;
+  const html = bodyDetailHtml(ex, bodyZoom.view, bodyZoom.all);
+  if ($("modal").hidden || !$("bodyZoomBox")) openModal(ex.nom ? `Muscles : ${ex.nom}` : "Muscles travaillés", `<div id="bodyZoomBox">${html}</div>`);
+  else $("bodyZoomBox").innerHTML = html;
+}
 
 // Séance en cours : on sélectionne le contenu au toucher (on tape directement par-dessus)
 // et la touche « suivant » du clavier passe à la case suivante

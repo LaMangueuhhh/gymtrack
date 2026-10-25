@@ -13,6 +13,9 @@ Toutes les données restent **sur ton téléphone** (aucun compte, aucun serveur
 - **Agenda** : calendrier des jours à la salle, heure d'arrivée / départ et temps passé (bouton « J'arrive » / « Je pars »).
 - **Exercices** : ~100 exercices en français avec images du mouvement, silhouette des muscles (vert = principal, jaune = secondaire), étapes, conseils et erreurs à éviter.
   Machines Technogym / Hammer Strength (type Fitness Park), calisthénie et étirements. Une machine absente de ta salle peut être masquée.
+- **Défi du jour** : 4 exos maison (pompes, squats, gainage, tractions…), série de jours 🔥, niveau qui monte, chrono, tests de records.
+- **Rangs** : Fer → Bronze → Argent → Or → Platine → Diamant → Champion sur chaque exo, calculés selon ton poids (1RM estimé) ou tes reps max.
+- **Schéma anatomique détaillé** : muscles découpés en chefs, vue zoomée avec le nom de chaque muscle.
 - **Séances toutes faites** : 41 séances prêtes (full body, pecs, dos, jambes, fessiers, HIIT, machines, calisthénie, express 30 min, étirements…).
 - **Eau** : compteur de verres avec objectif journalier.
 - **Apple Santé** : envoi de l'eau, du poids, des séances et des calories via l'app Raccourcis de l'iPhone (guide dans Réglages → Apple Santé).
@@ -48,6 +51,8 @@ python3 -m http.server 8000
 | `style.css` | Design (thème sombre) |
 | `app.js` | Toute la logique de l'appli |
 | `data.js` | Exercices, programmes, objectifs |
+| `defi.js` | Défi quotidien |
+| `ranks.js` | Rangs et standards de force |
 | `seances.js` | Séances toutes faites |
 | `data-extra.js` | Machines de la salle, calisthénie, étirements |
 | `bodymap.js` | Silhouette des muscles travaillés |
