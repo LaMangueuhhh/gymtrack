@@ -20,8 +20,8 @@ Toutes les données restent **sur ton téléphone** (aucun compte, aucun serveur
 ## Mettre l'appli sur ton téléphone (gratuit)
 
 1. Sur GitHub : **Settings → Pages → Build and deployment → Source : Deploy from a branch**,
-   choisis la branche qui contient le dossier `gym/` puis `/ (root)` → **Save**.
-2. Après 1-2 minutes, l'appli est en ligne sur : `https://<ton-pseudo>.github.io/progweb/gym/`
+   choisis la branche `main` et `/ (root)` → **Save**.
+2. Après 1-2 minutes, l'appli est en ligne sur : https://lamangueuhhh.github.io/gymtrack/
 3. Ouvre ce lien sur ton téléphone :
    - **Android (Chrome)** : menu ⋮ → *Installer l'application*.
    - **iPhone (Safari)** : bouton Partager → *Sur l'écran d'accueil*.
@@ -31,7 +31,6 @@ Le scanner de code-barres a besoin de HTTPS (c'est le cas avec GitHub Pages) et 
 ## Tester sur l'ordi
 
 ```bash
-cd gym
 python3 -m http.server 8000
 # puis ouvrir http://localhost:8000
 ```
