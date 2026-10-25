@@ -1,0 +1,1123 @@
+// GymTrack — appli de suivi muscu / nutrition / corps.
+// Tout est stocké en local sur le téléphone (localStorage). Aucun compte, aucun serveur, 100% gratuit.
+
+// ============================================================
+//  Outils
+// ============================================================
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const num = (v) => { const n = parseFloat(String(v ?? "").replace(",", ".")); return isNaN(n) ? 0 : n; };
+const r1 = (n) => Math.round(n * 10) / 10;
+const pad = (n) => String(n).padStart(2, "0");
+const dayStr = (d = new Date()) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const parseDay = (s) => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); };
+const fmtDay = (s, opts = { weekday: "short", day: "numeric", month: "short" }) => parseDay(s).toLocaleDateString("fr-FR", opts);
+const fmtShort = (s) => parseDay(s).toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
+const fmtTime = (sec) => `${Math.floor(sec / 60)}:${pad(Math.floor(sec % 60))}`;
+const exById = (id) => EXERCISES.find((e) => e.id === id) || (state.customEx || []).find((e) => e.id === id);
+const imgUrl = (ex, i = 0) => (ex && ex.img ? `${IMG_BASE}${ex.img}/${i}.jpg` : "icons/icon-192.png");
+
+// Champs à saisir pour chaque série selon le type d'exercice
+const FIELDS = {
+  force: [["kg", "kg"], ["reps", "reps"]],
+  pdc: [["kg", "lest kg"], ["reps", "reps"]],
+  temps: [["sec", "secondes"]],
+  cardio: [["min", "min"], ["km", "km"]],
+};
+const FEELS = ["😫", "😕", "😐", "🙂", "💪"];
+const MEALS = { pdj: "Petit-déjeuner", dej: "Déjeuner", diner: "Dîner", snack: "Collations" };
+
+// ============================================================
+//  Données (stockage local)
+// ============================================================
+const STORE_KEY = "gymtrack_v1";
+const DEFAULT_STATE = {
+  profile: { sexe: "h", age: "", taille: "", poids: "", activite: "1.55", objectif: "maintien", kcalPerso: "" },
+  sessions: [],
+  current: null,
+  body: [],
+  food: {},
+  recentFoods: [],
+  activeProgram: null,
+  settings: { rest: 90 },
+};
+let state = load();
+
+function load() {
+  try {
+    const s = JSON.parse(localStorage.getItem(STORE_KEY));
+    if (s) return { ...structuredClone(DEFAULT_STATE), ...s, profile: { ...DEFAULT_STATE.profile, ...s.profile }, settings: { ...DEFAULT_STATE.settings, ...s.settings } };
+  } catch (e) { /* données corrompues : on repart de zéro */ }
+  return structuredClone(DEFAULT_STATE);
+}
+let saveTimer;
+function save() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => localStorage.setItem(STORE_KEY, JSON.stringify(state)), 150);
+}
+function saveNow() { clearTimeout(saveTimer); localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
+window.addEventListener("pagehide", saveNow);
+document.addEventListener("visibilitychange", () => document.hidden && saveNow());
+
+// ============================================================
+//  Calculs
+// ============================================================
+function currentWeight() {
+  const last = [...state.body].sort((a, b) => a.date.localeCompare(b.date)).filter((b) => num(b.poids) > 0).pop();
+  return last ? num(last.poids) : num(state.profile.poids);
+}
+
+// Besoin calorique (formule de Mifflin-St Jeor) + répartition des macros selon l'objectif
+function nutritionGoals() {
+  const p = state.profile;
+  const w = currentWeight(), h = num(p.taille), a = num(p.age);
+  const obj = OBJECTIFS[p.objectif] || OBJECTIFS.maintien;
+  if (!w || !h || !a) return null;
+  const bmr = 10 * w + 6.25 * h - 5 * a + (p.sexe === "f" ? -161 : 5);
+  const tdee = bmr * num(p.activite || 1.55);
+  const kcal = num(p.kcalPerso) || Math.round((tdee * (1 + obj.kcal)) / 10) * 10;
+  const prot = Math.round(obj.prot * w);
+  const lip = Math.round(0.9 * w);
+  const gluc = Math.max(0, Math.round((kcal - prot * 4 - lip * 9) / 4));
+  return { bmr: Math.round(bmr), tdee: Math.round(tdee), kcal, prot, lip, gluc };
+}
+
+function foodTotals(entries) {
+  const t = { k: 0, p: 0, c: 0, f: 0 };
+  for (const e of entries) {
+    const q = num(e.g) / 100;
+    t.k += num(e.k) * q; t.p += num(e.p) * q; t.c += num(e.c) * q; t.f += num(e.f) * q;
+  }
+  return t;
+}
+
+const isFilled = (type, s) => FIELDS[type].some(([k]) => num(s[k]) > 0);
+
+// Statistiques d'un exercice dans une séance
+function exStats(type, sets) {
+  const done = sets.filter((s) => isFilled(type, s));
+  const st = { sets: done.length };
+  if (type === "force") {
+    st.e1rm = Math.max(0, ...done.map((s) => (num(s.reps) <= 1 ? num(s.kg) : num(s.kg) * (1 + num(s.reps) / 30))));
+    st.maxKg = Math.max(0, ...done.map((s) => num(s.kg)));
+    st.volume = done.reduce((a, s) => a + num(s.kg) * num(s.reps), 0);
+  } else if (type === "pdc") {
+    st.maxReps = Math.max(0, ...done.map((s) => num(s.reps)));
+    st.totalReps = done.reduce((a, s) => a + num(s.reps), 0);
+    st.maxKg = Math.max(0, ...done.map((s) => num(s.kg)));
+  } else if (type === "temps") {
+    st.maxSec = Math.max(0, ...done.map((s) => num(s.sec)));
+    st.totalSec = done.reduce((a, s) => a + num(s.sec), 0);
+  } else {
+    st.min = done.reduce((a, s) => a + num(s.min), 0);
+    st.km = done.reduce((a, s) => a + num(s.km), 0);
+  }
+  return st;
+}
+const METRICS = {
+  force: [["e1rm", "1RM estimé (kg)"], ["maxKg", "Charge max (kg)"], ["volume", "Volume (kg)"]],
+  pdc: [["maxReps", "Reps max"], ["totalReps", "Reps totales"], ["maxKg", "Lest max (kg)"]],
+  temps: [["maxSec", "Meilleur temps (s)"], ["totalSec", "Temps total (s)"]],
+  cardio: [["min", "Durée (min)"], ["km", "Distance (km)"]],
+};
+
+function setText(type, s) {
+  if (type === "force") return `${r1(num(s.kg))} kg × ${num(s.reps)}`;
+  if (type === "pdc") return `${num(s.reps)} reps${num(s.kg) ? ` (+${r1(num(s.kg))} kg)` : ""}`;
+  if (type === "temps") return `${num(s.sec)} s`;
+  return `${num(s.min)} min${num(s.km) ? ` · ${r1(num(s.km))} km` : ""}`;
+}
+
+function sessionVolume(s) {
+  return s.exercises.reduce((a, e) => { const ex = exById(e.exId); return a + (ex && ex.type === "force" ? exStats("force", e.sets).volume : 0); }, 0);
+}
+
+// Historique d'un exercice : [{date, stats, sets, sessionId}] du plus ancien au plus récent
+function exHistory(exId) {
+  const ex = exById(exId);
+  const out = [];
+  for (const s of [...state.sessions].sort((a, b) => a.date.localeCompare(b.date))) {
+    for (const e of s.exercises) if (e.exId === exId) out.push({ date: s.date, sets: e.sets, stats: exStats(ex.type, e.sets), sessionId: s.id });
+  }
+  return out;
+}
+function lastPerf(exId) { const h = exHistory(exId); return h.length ? h[h.length - 1] : null; }
+
+function weekStart(d = new Date()) { const x = new Date(d); x.setHours(0, 0, 0, 0); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; }
+function sessionsThisWeek() { const ws = dayStr(weekStart()); return state.sessions.filter((s) => s.date >= ws).length; }
+
+// ============================================================
+//  Petits éléments d'interface
+// ============================================================
+function toast(msg, ms = 2200) {
+  const t = $("toast"); t.textContent = msg; t.hidden = false;
+  clearTimeout(toast._t); toast._t = setTimeout(() => (t.hidden = true), ms);
+}
+
+let modalCleanup = null;
+function openModal(title, html, cleanup) {
+  closeModal();
+  $("modalTitle").textContent = title;
+  $("modalBody").innerHTML = html;
+  $("modal").hidden = false;
+  modalCleanup = cleanup || null;
+}
+function closeModal() {
+  if (modalCleanup) { try { modalCleanup(); } catch (e) { /* ignore */ } modalCleanup = null; }
+  $("modal").hidden = true;
+  $("modalBody").innerHTML = "";
+}
+$("modal").addEventListener("click", (e) => { if (e.target.id === "modal") closeModal(); });
+
+let charts = [];
+function destroyCharts() { charts.forEach((c) => c.destroy()); charts = []; }
+function lineChart(canvasId, labels, datasets, opts = {}) {
+  const el = $(canvasId);
+  if (!el || typeof Chart === "undefined") return;
+  const colors = ["#c6ff3d", "#4da3ff", "#ff9f43", "#ff5c6c"];
+  charts.push(new Chart(el, {
+    type: opts.type || "line",
+    data: {
+      labels,
+      datasets: datasets.map((d, i) => ({
+        tension: 0.3, pointRadius: 3, borderWidth: 2, spanGaps: true,
+        borderColor: colors[i], backgroundColor: opts.type === "bar" ? colors[i] : colors[i] + "22",
+        fill: datasets.length === 1 && opts.type !== "bar", ...d,
+      })),
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      plugins: { legend: { display: datasets.length > 1, labels: { color: "#9aa1b1", boxWidth: 12 } } },
+      scales: {
+        x: { ticks: { color: "#9aa1b1", maxRotation: 0, autoSkipPadding: 12 }, grid: { color: "#262a33" } },
+        y: { ticks: { color: "#9aa1b1" }, grid: { color: "#262a33" }, beginAtZero: !!opts.zero },
+        ...(opts.y2 ? { y2: { position: "right", ticks: { color: "#9aa1b1" }, grid: { display: false }, min: 0, max: 10 } } : {}),
+      },
+    },
+  }));
+}
+
+// Silhouette avec les muscles travaillés en couleur
+function bodyMap(ex) {
+  const main = new Set(ex.muscles), sec = new Set(ex.secondaires);
+  const fill = (m) => (main.has(m) ? "#c6ff3d" : sec.has(m) ? "#6f8f2c" : "#2e3340");
+  const R = (m, x, y, w, h, rx) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${rx}" fill="${fill(m)}"/>`;
+  const pair = (m, x, y, w, h, rx) => R(m, x, y, w, h, rx) + R(m, 100 - x - w, y, w, h, rx);
+  const base = `<circle cx="50" cy="15" r="11" fill="#3a4050"/><rect x="45" y="25" width="10" height="7" fill="#3a4050"/>
+    <rect x="35" y="180" width="12" height="8" rx="3" fill="#3a4050"/><rect x="53" y="180" width="12" height="8" rx="3" fill="#3a4050"/>`;
+  const front = base +
+    `<ellipse cx="29" cy="40" rx="9" ry="7" fill="${fill("epaules")}"/><ellipse cx="71" cy="40" rx="9" ry="7" fill="${fill("epaules")}"/>` +
+    pair("pecs", 33, 35, 16, 17, 5) + pair("biceps", 18, 47, 9, 20, 4) + pair("avant_bras", 15, 69, 8, 24, 4) +
+    R("abdos", 41, 54, 18, 31, 4) + pair("obliques", 33, 55, 7, 28, 3) +
+    `<rect x="34" y="86" width="32" height="11" rx="4" fill="#3a4050"/>` +
+    pair("quadriceps", 34, 98, 14, 44, 6) + pair("mollets", 36, 145, 10, 34, 5);
+  const back = base +
+    `<polygon points="38,29 62,29 67,40 50,54 33,40" fill="${fill("trapezes")}"/>` +
+    `<ellipse cx="29" cy="40" rx="9" ry="7" fill="${fill("epaules_arr")}"/><ellipse cx="71" cy="40" rx="9" ry="7" fill="${fill("epaules_arr")}"/>` +
+    pair("dos", 32, 45, 10, 28, 5) + R("dos_milieu", 43, 46, 14, 18, 3) + R("lombaires", 42, 66, 16, 18, 3) +
+    pair("triceps", 18, 47, 9, 20, 4) + pair("avant_bras", 15, 69, 8, 24, 4) +
+    pair("fessiers", 34, 86, 15, 17, 7) + pair("ischios", 34, 105, 14, 37, 6) + pair("mollets", 35, 145, 12, 34, 6);
+  return `<div class="bodymap">
+    <figure><svg viewBox="0 0 100 190">${front}</svg><figcaption>Face</figcaption></figure>
+    <figure><svg viewBox="0 0 100 190">${back}</svg><figcaption>Dos</figcaption></figure>
+  </div>`;
+}
+
+const muscleTags = (ex) =>
+  ex.muscles.map((m) => `<span class="tag main">${MUSCLES[m]}</span>`).join("") +
+  ex.secondaires.map((m) => `<span class="tag sec">${MUSCLES[m]}</span>`).join("");
+
+// ============================================================
+//  Routeur
+// ============================================================
+const ROUTES = {
+  accueil: viewHome,
+  seances: viewSessions,
+  seance: viewSessionDetail,
+  live: viewLive,
+  exos: viewExercises,
+  exo: viewExercise,
+  progres: viewProgress,
+  programmes: viewPrograms,
+  programme: viewProgram,
+  nutrition: viewNutrition,
+  corps: viewBody,
+  reglages: viewSettings,
+};
+const TAB_OF = { seance: "seances", live: "seances", progres: "seances", exo: "exos", programmes: "accueil", programme: "accueil", reglages: "" };
+const TOP_LEVEL = ["accueil", "seances", "exos", "nutrition", "corps"];
+let ui = { exGroup: "Tous", exSearch: "", foodDay: dayStr(), bodyMetric: "poids", progMetric: null, progFilter: "tous" };
+
+function route() {
+  const parts = location.hash.replace(/^#\/?/, "").split("/");
+  const name = ROUTES[parts[0]] ? parts[0] : "accueil";
+  const arg = parts[1] ? decodeURIComponent(parts[1]) : null;
+  destroyCharts();
+  const tab = TAB_OF[name] ?? name;
+  document.querySelectorAll(".tabbar a").forEach((a) => a.classList.toggle("active", a.dataset.tab === tab));
+  $("backBtn").hidden = TOP_LEVEL.includes(name);
+  const app = $("app");
+  const html = ROUTES[name](arg);
+  if (html !== undefined) app.innerHTML = html;
+  if (route.after) { const f = route.after; route.after = null; f(); }
+  if (route.lastName !== name || route.lastArg !== arg) window.scrollTo(0, 0);
+  route.lastName = name; route.lastArg = arg;
+}
+const setTitle = (t) => { $("title").textContent = t; document.title = `${t} · GymTrack`; };
+const after = (f) => { route.after = f; };
+const go = (h) => { if (location.hash === h) route(); else location.hash = h; };
+window.addEventListener("hashchange", route);
+
+// ============================================================
+//  ACCUEIL
+// ============================================================
+function viewHome() {
+  setTitle("GymTrack");
+  const g = nutritionGoals();
+  const today = foodTotals(state.food[dayStr()] || []);
+  const w = currentWeight();
+  let html = "";
+
+  if (state.current) {
+    const ex = state.current.exercises.length;
+    html += `<div class="card" style="border-color:var(--accent)">
+      <h2>⏱️ Séance en cours</h2>
+      <p class="muted small">${esc(state.current.name)} · ${ex} exercice${ex > 1 ? "s" : ""}</p>
+      <a class="btn primary block" href="#/live">Reprendre la séance</a></div>`;
+  }
+
+  if (!g) {
+    html += `<div class="card"><h2>👋 Bienvenue !</h2>
+      <p class="muted">Commence par remplir ton profil (âge, taille, poids, objectif) : l'appli calculera tes besoins en calories et en protéines.</p>
+      <a class="btn primary block" href="#/corps">Remplir mon profil</a></div>`;
+  }
+
+  html += `<div class="grid3">
+    <div class="stat"><b>${sessionsThisWeek()}</b><span>séances cette semaine</span></div>
+    <div class="stat"><b>${Math.round(today.k)}</b><span>kcal ${g ? "/ " + g.kcal : "aujourd'hui"}</span></div>
+    <div class="stat"><b>${w ? r1(w) : "–"}</b><span>kg</span></div>
+  </div>`;
+
+  // Prochaine séance du programme actif
+  const ap = state.activeProgram && PROGRAMS.find((p) => p.id === state.activeProgram.id);
+  html += `<div class="section-title">Mon programme</div>`;
+  if (ap) {
+    const idx = (state.activeProgram.next || 0) % ap.seances.length;
+    const day = ap.seances[idx];
+    html += `<div class="card"><p class="muted small">${esc(ap.nom)}</p>
+      <h2>Prochaine : ${esc(day.nom)}</h2>
+      <p class="muted small">${day.ex.map(([id]) => esc(exById(id).nom)).join(" · ")}</p>
+      <div class="row"><button class="btn primary grow" data-act="start-program" data-prog="${ap.id}" data-day="${idx}">▶ Commencer</button>
+      <a class="btn" href="#/programme/${ap.id}">Voir</a></div></div>`;
+  } else {
+    html += `<div class="card"><p class="muted">Choisis un programme selon ton objectif (prise de masse, sèche, perte de poids…) et l'appli te proposera ta prochaine séance.</p>
+      <a class="btn primary block" href="#/programmes">Choisir un programme</a></div>`;
+  }
+
+  html += `<div class="section-title">Actions rapides</div>
+    <div class="grid2">
+      <button class="btn" data-act="start-free">🏋️ Séance libre</button>
+      <a class="btn" href="#/programmes">📋 Programmes</a>
+      <button class="btn" data-act="go" data-to="#/nutrition" data-then="add-food">🍽️ Ajouter un repas</button>
+      <button class="btn" data-act="add-body">⚖️ Nouvelle pesée</button>
+    </div>`;
+
+  if (g) {
+    html += `<div class="section-title">Aujourd'hui</div>
+      <div class="card">${macroBars(today, g)}</div>`;
+  }
+
+  const last = [...state.sessions].sort((a, b) => b.date.localeCompare(a.date))[0];
+  if (last) {
+    html += `<div class="section-title">Dernière séance</div><div class="card">${sessionLine(last)}</div>`;
+  }
+  return html;
+}
+
+function macroBars(t, g, withKcal = true) {
+  const bar = (label, v, goal, unit) => {
+    const pct = goal ? Math.min(100, (v / goal) * 100) : 0;
+    return `<div class="macro"><div class="row between"><span>${label}</span><span class="muted">${Math.round(v)} / ${goal} ${unit}</span></div>
+      <div class="progress ${v > goal * 1.05 ? "over" : ""}"><div style="width:${pct}%"></div></div></div>`;
+  };
+  return (withKcal ? bar("Calories", t.k, g.kcal, "kcal") : "") + bar("Protéines", t.p, g.prot, "g") + bar("Glucides", t.c, g.gluc, "g") + bar("Lipides", t.f, g.lip, "g");
+}
+
+// ============================================================
+//  SÉANCES (historique + stats)
+// ============================================================
+function sessionLine(s) {
+  const vol = sessionVolume(s);
+  return `<div class="list-item" data-act="go" data-to="#/seance/${s.id}">
+    <div class="grow"><b>${esc(s.name)}</b>
+      <div class="muted small">${fmtDay(s.date)} · ${s.exercises.length} exo${s.exercises.length > 1 ? "s" : ""}${vol ? ` · ${Math.round(vol)} kg soulevés` : ""}${s.duration ? ` · ${Math.round(s.duration / 60)} min` : ""}</div>
+      ${s.fatigue ? `<div class="small">Fatigue ${s.fatigue}/10 ${s.feel ? FEELS[s.feel - 1] : ""}</div>` : ""}
+    </div><span class="arrow">›</span></div>`;
+}
+
+function viewSessions() {
+  setTitle("Séances");
+  const list = [...state.sessions].sort((a, b) => b.date.localeCompare(a.date) || b.start - a.start);
+  let html = state.current
+    ? `<a class="btn primary block" href="#/live">⏱️ Reprendre la séance en cours</a>`
+    : `<div class="grid2"><button class="btn primary" data-act="start-free">＋ Séance libre</button><a class="btn" href="#/programmes">📋 Programmes</a></div>`;
+
+  if (!list.length) {
+    return html + `<div class="empty"><span class="big">🏋️</span>Aucune séance enregistrée.<br>Lance ta première séance !</div>`;
+  }
+
+  // Exercices déjà pratiqués → accès à la progression
+  const done = {};
+  for (const s of list) for (const e of s.exercises) done[e.exId] = (done[e.exId] || 0) + 1;
+  html += `<div class="section-title">Ma progression</div><div class="card">
+    <div class="chart-box"><canvas id="sessChart"></canvas></div>
+    <p class="muted small center">Volume soulevé (kg) et fatigue ressentie (/10) par séance</p></div>
+    <div class="card"><h2>📈 Progression par exercice</h2>
+    ${Object.keys(done).filter(exById).sort((a, b) => done[b] - done[a]).map((id) => {
+      const ex = exById(id);
+      return `<div class="list-item" data-act="go" data-to="#/progres/${id}"><img class="thumb" src="${imgUrl(ex)}" alt="" loading="lazy">
+        <div class="grow"><b>${esc(ex.nom)}</b><div class="muted small">${done[id]} séance${done[id] > 1 ? "s" : ""}</div></div><span class="arrow">›</span></div>`;
+    }).join("")}</div>`;
+
+  html += `<div class="section-title">Historique</div><div class="card">${list.map(sessionLine).join("")}</div>`;
+
+  after(() => {
+    const last = list.slice(0, 20).reverse();
+    lineChart("sessChart", last.map((s) => fmtShort(s.date)), [
+      { label: "Volume (kg)", data: last.map((s) => Math.round(sessionVolume(s))), type: "bar", backgroundColor: "#c6ff3d88", yAxisID: "y" },
+      { label: "Fatigue", data: last.map((s) => s.fatigue || null), borderColor: "#ff9f43", yAxisID: "y2" },
+    ], { zero: true, y2: true });
+  });
+  return html;
+}
+
+function viewSessionDetail(id) {
+  const s = state.sessions.find((x) => x.id === id);
+  if (!s) { go("#/seances"); return; }
+  setTitle(s.name);
+  let html = `<div class="card"><div class="muted">${fmtDay(s.date, { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</div>
+    <div class="grid3" style="margin-top:10px">
+      <div class="stat"><b>${s.duration ? Math.round(s.duration / 60) : "–"}</b><span>minutes</span></div>
+      <div class="stat"><b>${Math.round(sessionVolume(s))}</b><span>kg soulevés</span></div>
+      <div class="stat"><b>${s.fatigue || "–"}${s.feel ? " " + FEELS[s.feel - 1] : ""}</b><span>fatigue /10</span></div>
+    </div>${s.notes ? `<p style="white-space:pre-wrap">📝 ${esc(s.notes)}</p>` : ""}</div>`;
+  for (const e of s.exercises) {
+    const ex = exById(e.exId);
+    if (!ex) continue;
+    html += `<div class="card"><div class="row" data-act="go" data-to="#/progres/${ex.id}" style="cursor:pointer">
+      <img class="thumb" src="${imgUrl(ex)}" alt="" style="width:48px;height:48px;border-radius:8px;background:#fff;object-fit:cover">
+      <div class="grow"><b>${esc(ex.nom)}</b></div><span class="arrow">📈</span></div>
+      <ol class="steps" style="margin-top:8px">${e.sets.map((x) => `<li>${setText(ex.type, x)}</li>`).join("")}</ol></div>`;
+  }
+  html += `<div class="grid2"><button class="btn" data-act="redo-session" data-id="${s.id}">🔁 Refaire</button>
+    <button class="btn danger" data-act="del-session" data-id="${s.id}">🗑 Supprimer</button></div>`;
+  return html;
+}
+
+// ============================================================
+//  SÉANCE EN COURS
+// ============================================================
+function newSet(prev) { return { kg: prev?.kg ?? "", reps: prev?.reps ?? "", sec: prev?.sec ?? "", min: prev?.min ?? "", km: prev?.km ?? "", done: false }; }
+
+function startSession(name, items, extra = {}) {
+  if (state.current && !confirm("Une séance est déjà en cours. La remplacer ?")) return;
+  state.current = {
+    id: uid(), name, start: Date.now(), date: dayStr(), ...extra,
+    exercises: items.map((it) => ({ exId: it.exId, target: it.target || "", rest: it.rest || state.settings.rest, sets: Array.from({ length: it.sets || 1 }, () => newSet()) })),
+  };
+  save();
+  go("#/live");
+}
+
+function viewLive() {
+  const c = state.current;
+  if (!c) { go("#/seances"); return; }
+  setTitle("Séance en cours");
+  let html = `<div class="card"><label class="field">Nom de la séance<input data-in="cur-name" value="${esc(c.name)}"></label>
+    <p class="muted small" style="margin:8px 0 0">⏱️ <span id="elapsed">${fmtTime((Date.now() - c.start) / 1000)}</span> · cochez ✓ chaque série pour lancer le chrono de repos</p></div>`;
+
+  c.exercises.forEach((e, i) => {
+    const ex = exById(e.exId);
+    if (!ex) return;
+    const fields = FIELDS[ex.type];
+    const prev = lastPerf(ex.id);
+    html += `<div class="card">
+      <div class="row">
+        <img src="${imgUrl(ex)}" alt="" data-act="ex-info" data-id="${ex.id}" style="width:52px;height:52px;border-radius:10px;object-fit:cover;background:#fff;cursor:pointer">
+        <div class="grow"><b>${esc(ex.nom)}</b>
+          ${e.target ? `<div class="small" style="color:var(--accent)">Objectif : ${esc(e.target)}${e.rest ? ` · repos ${fmtTime(e.rest)}` : ""}</div>` : ""}
+          ${prev ? `<div class="prev">Dernière fois : ${prev.sets.filter((s) => isFilled(ex.type, s)).map((s) => setText(ex.type, s)).join(" · ")}</div>` : ""}
+        </div>
+        <button class="icon-btn" data-act="ex-menu" data-i="${i}" aria-label="Options">⋯</button>
+      </div>
+      <table class="set-table"><tr><th>#</th>${fields.map(([, l]) => `<th>${l}</th>`).join("")}<th>✓</th></tr>
+      ${e.sets.map((s, j) => {
+        const ps = prev && prev.sets[j];
+        return `<tr class="${s.done ? "done" : ""}"><td>${j + 1}</td>
+          ${fields.map(([k]) => `<td><input inputmode="decimal" data-in="set" data-i="${i}" data-j="${j}" data-k="${k}" value="${esc(s[k])}" placeholder="${ps && num(ps[k]) ? esc(ps[k]) : "–"}"></td>`).join("")}
+          <td><button class="check" data-act="set-done" data-i="${i}" data-j="${j}">✓</button></td></tr>`;
+      }).join("")}</table>
+      <div class="row" style="margin-top:8px"><button class="btn sm grow" data-act="add-set" data-i="${i}">＋ Série</button>
+      ${e.sets.length > 1 ? `<button class="btn sm" data-act="del-set" data-i="${i}">− Série</button>` : ""}</div>
+    </div>`;
+  });
+
+  html += `<button class="btn block" data-act="pick-ex">＋ Ajouter un exercice</button>
+    <div class="grid2" style="margin-top:12px"><button class="btn danger" data-act="cancel-session">Annuler</button>
+    <button class="btn primary" data-act="finish-session">✔ Terminer</button></div>`;
+  return html;
+}
+
+// Chrono de la séance
+setInterval(() => { const el = $("elapsed"); if (el && state.current) el.textContent = fmtTime((Date.now() - state.current.start) / 1000); }, 1000);
+
+// Chrono de repos
+const rest = { end: 0, int: null };
+function startRest(sec) {
+  rest.end = Date.now() + sec * 1000;
+  $("restTimer").hidden = false;
+  document.body.classList.add("resting");
+  clearInterval(rest.int);
+  tickRest();
+  rest.int = setInterval(tickRest, 250);
+}
+function tickRest() {
+  const left = Math.ceil((rest.end - Date.now()) / 1000);
+  if (left <= 0) {
+    stopRest();
+    if (navigator.vibrate) navigator.vibrate([300, 150, 300]);
+    beep();
+    toast("⏰ Repos terminé, série suivante !");
+    return;
+  }
+  $("restTime").textContent = fmtTime(left);
+}
+function stopRest() { clearInterval(rest.int); $("restTimer").hidden = true; document.body.classList.remove("resting"); }
+function beep() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.connect(g); g.connect(ctx.destination); o.frequency.value = 880; g.gain.value = 0.2;
+    o.start(); o.stop(ctx.currentTime + 0.4);
+  } catch (e) { /* pas de son, tant pis */ }
+}
+
+function pickExerciseModal(onPick) {
+  const render = (q = "", grp = "Tous") => {
+    const list = EXERCISES.filter((e) => (grp === "Tous" || e.groupe === grp) && e.nom.toLowerCase().includes(q.toLowerCase()));
+    return list.map((e) => `<div class="list-item" data-act="pick" data-id="${e.id}"><img class="thumb" src="${imgUrl(e)}" alt="" loading="lazy">
+      <div class="grow"><b>${esc(e.nom)}</b><div class="muted small">${e.groupe} · ${esc(e.materiel)}</div></div><span class="arrow">＋</span></div>`).join("") || `<div class="empty">Aucun exercice</div>`;
+  };
+  openModal("Ajouter un exercice", `<input id="pickQ" placeholder="🔍 Rechercher…" autocomplete="off">
+    <div class="chips" style="margin:10px 0">${["Tous", ...GROUPES].map((g, i) => `<button class="chip ${i ? "" : "on"}" data-act="pick-grp" data-g="${g}">${g}</button>`).join("")}</div>
+    <div id="pickList">${render()}</div>`);
+  let grp = "Tous";
+  const refresh = () => ($("pickList").innerHTML = render($("pickQ").value, grp));
+  $("pickQ").addEventListener("input", refresh);
+  pickExerciseModal.onGroup = (g) => { grp = g; document.querySelectorAll("[data-act=pick-grp]").forEach((c) => c.classList.toggle("on", c.dataset.g === g)); refresh(); };
+  pickExerciseModal.onPick = (id) => { closeModal(); onPick(id); };
+}
+
+function finishModal() {
+  const c = state.current;
+  const filled = c.exercises.reduce((a, e) => a + e.sets.filter((s) => isFilled(exById(e.exId).type, s)).length, 0);
+  if (!filled) { toast("Remplis au moins une série avant de terminer 😉"); return; }
+  let fatigue = 6, feel = 4;
+  openModal("Fin de séance 💪", `<div class="stack">
+    <label class="field">Fatigue / difficulté ressentie : <b id="fatV" style="color:var(--text)">6</b>/10
+      <input type="range" min="1" max="10" value="6" id="fatIn"></label>
+    <div class="row between small muted"><span>Facile</span><span>Épuisé</span></div>
+    <div class="field">Comment tu te sens ?</div>
+    <div class="feel-row">${FEELS.map((f, i) => `<button data-act="feel" data-v="${i + 1}" class="${i === 3 ? "on" : ""}">${f}</button>`).join("")}</div>
+    <label class="field">Notes (sommeil, douleurs, sensations…)<textarea id="notesIn" placeholder="Ex : bien dormi, bonnes sensations au développé"></textarea></label>
+    <button class="btn primary block" data-act="save-session">Enregistrer la séance</button></div>`);
+  $("fatIn").addEventListener("input", (e) => { fatigue = +e.target.value; $("fatV").textContent = fatigue; });
+  finishModal.getFeel = () => feel;
+  finishModal.setFeel = (v) => { feel = v; document.querySelectorAll("[data-act=feel]").forEach((b) => b.classList.toggle("on", +b.dataset.v === v)); };
+  finishModal.getFatigue = () => fatigue;
+}
+
+function saveSession() {
+  const c = state.current;
+  const prs = [];
+  const exercises = c.exercises.map((e) => {
+    const ex = exById(e.exId);
+    return { exId: e.exId, sets: e.sets.filter((s) => isFilled(ex.type, s)).map((s) => { const o = {}; FIELDS[ex.type].forEach(([k]) => (o[k] = num(s[k]))); return o; }) };
+  }).filter((e) => e.sets.length);
+  // Détection des records personnels
+  for (const e of exercises) {
+    const ex = exById(e.exId);
+    const key = METRICS[ex.type][0][0];
+    const best = Math.max(0, ...exHistory(e.exId).map((h) => h.stats[key] || 0));
+    const now = exStats(ex.type, e.sets)[key] || 0;
+    if (best > 0 && now > best) prs.push(ex.nom);
+  }
+  const s = {
+    id: c.id, name: c.name || "Séance", date: c.date, start: c.start, duration: Math.round((Date.now() - c.start) / 1000),
+    exercises, fatigue: finishModal.getFatigue(), feel: finishModal.getFeel(), notes: $("notesIn").value.trim(), programId: c.programId || null,
+  };
+  state.sessions.push(s);
+  if (c.programId && state.activeProgram && state.activeProgram.id === c.programId) {
+    const p = PROGRAMS.find((x) => x.id === c.programId);
+    state.activeProgram.next = (c.dayIdx + 1) % p.seances.length;
+  }
+  state.current = null;
+  saveNow();
+  stopRest();
+  closeModal();
+  go(`#/seance/${s.id}`);
+  toast(prs.length ? `🏆 Nouveau record : ${prs.join(", ")} !` : "Séance enregistrée 💪", 3500);
+}
+
+// ============================================================
+//  EXERCICES
+// ============================================================
+function viewExercises() {
+  setTitle("Exercices");
+  const q = ui.exSearch.toLowerCase();
+  const list = EXERCISES.filter((e) => (ui.exGroup === "Tous" || e.groupe === ui.exGroup) &&
+    (e.nom.toLowerCase().includes(q) || e.muscles.some((m) => MUSCLES[m].toLowerCase().includes(q))));
+  const html = `<input id="exSearch" placeholder="🔍 Exercice ou muscle…" value="${esc(ui.exSearch)}" autocomplete="off">
+    <div class="chips" style="margin:10px 0 14px">${["Tous", ...GROUPES].map((g) => `<button class="chip ${ui.exGroup === g ? "on" : ""}" data-act="ex-grp" data-g="${g}">${g}</button>`).join("")}</div>
+    <div class="ex-grid" id="exGrid">${list.map((e) => `<div class="ex-card" data-act="go" data-to="#/exo/${e.id}">
+      <img src="${imgUrl(e)}" alt="" loading="lazy"><div>${esc(e.nom)}<small>${e.muscles.map((m) => MUSCLES[m]).join(", ")}</small></div></div>`).join("") || `<div class="empty">Aucun résultat</div>`}</div>`;
+  after(() => {
+    const inp = $("exSearch");
+    inp.addEventListener("input", () => { ui.exSearch = inp.value; const pos = inp.selectionStart; route(); const n = $("exSearch"); n.focus(); n.setSelectionRange(pos, pos); });
+  });
+  return html;
+}
+
+function exerciseDetailHtml(ex, withActions = true) {
+  return `<img class="ex-hero" id="exAnim" src="${imgUrl(ex, 0)}" alt="${esc(ex.nom)}">
+    <p class="muted small center">Position de départ ⇄ position d'arrivée</p>
+    <div class="card"><h2>💪 Muscles travaillés</h2>${bodyMap(ex)}
+      <div style="margin-top:10px">${muscleTags(ex)}</div>
+      <p class="muted small">🟩 principal · 🟢 secondaire · Matériel : ${esc(ex.materiel)}</p></div>
+    <div class="card"><h2>📋 Exécution</h2><ol class="steps">${ex.etapes.map((s) => `<li>${esc(s)}</li>`).join("")}</ol></div>
+    <div class="card"><h2>✅ Conseils</h2><ul class="steps">${ex.conseils.map((s) => `<li>${esc(s)}</li>`).join("")}</ul></div>
+    <div class="card"><h2>⚠️ Erreurs à éviter</h2><ul class="steps">${ex.erreurs.map((s) => `<li>${esc(s)}</li>`).join("")}</ul></div>
+    ${withActions ? `<div class="grid2"><a class="btn" href="#/progres/${ex.id}">📈 Ma progression</a>
+      <button class="btn primary" data-act="add-to-live" data-id="${ex.id}">＋ À ma séance</button></div>` : ""}`;
+}
+
+// Fait alterner les 2 images (départ / arrivée) pour montrer le mouvement
+let animInt;
+function animateExercise(ex) {
+  clearInterval(animInt);
+  let i = 0;
+  const pre = new Image(); pre.src = imgUrl(ex, 1);
+  animInt = setInterval(() => { const el = $("exAnim"); if (!el) return clearInterval(animInt); i = 1 - i; el.src = imgUrl(ex, i); }, 1100);
+}
+
+function viewExercise(id) {
+  const ex = exById(id);
+  if (!ex) { go("#/exos"); return; }
+  setTitle(ex.nom);
+  after(() => animateExercise(ex));
+  return exerciseDetailHtml(ex);
+}
+
+function viewProgress(id) {
+  const ex = exById(id);
+  if (!ex) { go("#/seances"); return; }
+  setTitle(ex.nom);
+  const hist = exHistory(id);
+  const metrics = METRICS[ex.type];
+  const metric = metrics.find(([k]) => k === ui.progMetric) ? ui.progMetric : metrics[0][0];
+  if (!hist.length) {
+    return `<div class="empty"><span class="big">📈</span>Pas encore de données pour cet exercice.<br>Fais-le dans une séance pour voir ta courbe !</div>
+      <a class="btn block" href="#/exo/${id}">Voir la fiche de l'exercice</a>`;
+  }
+  const best = (k) => Math.max(...hist.map((h) => h.stats[k] || 0));
+  const first = hist[0].stats[metric] || 0, lastV = hist[hist.length - 1].stats[metric] || 0;
+  const diff = first ? Math.round(((lastV - first) / first) * 100) : 0;
+  let html = `<div class="chips" style="margin-bottom:12px">${metrics.map(([k, l]) => `<button class="chip ${k === metric ? "on" : ""}" data-act="prog-metric" data-k="${k}">${l}</button>`).join("")}</div>
+    <div class="card"><div class="chart-box"><canvas id="progChart"></canvas></div>
+    <p class="center small ${diff >= 0 ? "" : "muted"}">${hist.length > 1 ? `${diff >= 0 ? "📈 +" : "📉 "}${diff}% depuis ta première séance` : "Refais cet exercice pour voir ta courbe évoluer"}</p></div>
+    <div class="section-title">Records</div><div class="grid${metrics.length === 3 ? 3 : 2}">${metrics.map(([k, l]) => `<div class="stat"><b>${r1(best(k))}</b><span>${l}</span></div>`).join("")}</div>
+    <div class="section-title">Historique</div><div class="card">${[...hist].reverse().map((h) => `<div class="list-item" data-act="go" data-to="#/seance/${h.sessionId}">
+      <div class="grow"><b>${fmtDay(h.date)}</b><div class="muted small">${h.sets.map((s) => setText(ex.type, s)).join(" · ")}</div></div></div>`).join("")}</div>
+    <a class="btn block" href="#/exo/${id}">📖 Fiche technique</a>`;
+  after(() => lineChart("progChart", hist.map((h) => fmtShort(h.date)), [{ label: metrics.find(([k]) => k === metric)[1], data: hist.map((h) => r1(h.stats[metric] || 0)) }]));
+  return html;
+}
+
+// ============================================================
+//  PROGRAMMES
+// ============================================================
+function viewPrograms() {
+  setTitle("Programmes");
+  const filters = [["tous", "Tous"], ["debutant", "Débutant"], ["masse", "Prise de masse"], ["seche", "Sèche"], ["perte", "Perte de poids"], ["force", "Force"]];
+  const list = PROGRAMS.filter((p) => ui.progFilter === "tous" || p.objectif === ui.progFilter);
+  return `<div class="chips" style="margin-bottom:12px">${filters.map(([k, l]) => `<button class="chip ${ui.progFilter === k ? "on" : ""}" data-act="prog-filter" data-k="${k}">${l}</button>`).join("")}</div>
+    ${list.map((p) => `<div class="card" data-act="go" data-to="#/programme/${p.id}" style="cursor:pointer">
+      <div class="row between"><h2 style="margin:0">${esc(p.nom)}</h2>${state.activeProgram?.id === p.id ? `<span class="tag main">Actif</span>` : ""}</div>
+      <p class="muted small">${p.seances.length} séances types · jusqu'à ${p.jours} j/semaine</p>
+      <p class="small" style="margin:0">${esc(p.desc)}</p></div>`).join("")}`;
+}
+
+function viewProgram(id) {
+  const p = PROGRAMS.find((x) => x.id === id);
+  if (!p) { go("#/programmes"); return; }
+  setTitle(p.nom);
+  const active = state.activeProgram?.id === p.id;
+  return `<div class="card"><p style="margin-top:0">${esc(p.desc)}</p>
+    ${active ? `<button class="btn block" data-act="unset-program">✔ Programme actif (désactiver)</button>` : `<button class="btn primary block" data-act="set-program" data-id="${p.id}">⭐ Choisir ce programme</button>`}</div>
+    ${p.seances.map((s, i) => `<div class="card"><h2>${esc(s.nom)}</h2>
+      ${s.ex.map(([exId, sets, reps, restS]) => { const ex = exById(exId); return `<div class="list-item" data-act="ex-info" data-id="${exId}">
+        <img class="thumb" src="${imgUrl(ex)}" alt="" loading="lazy"><div class="grow"><b>${esc(ex.nom)}</b>
+        <div class="muted small">${sets} × ${esc(reps)}${restS ? ` · repos ${fmtTime(restS)}` : ""}</div></div><span class="arrow">ⓘ</span></div>`; }).join("")}
+      <button class="btn primary block" style="margin-top:10px" data-act="start-program" data-prog="${p.id}" data-day="${i}">▶ Commencer cette séance</button></div>`).join("")}`;
+}
+
+function startProgramDay(pid, idx) {
+  const p = PROGRAMS.find((x) => x.id === pid);
+  const day = p.seances[idx];
+  startSession(day.nom, day.ex.map(([exId, sets, reps, restS]) => ({ exId, sets, target: `${sets} × ${reps}`, rest: restS })), { programId: pid, dayIdx: idx });
+}
+
+// ============================================================
+//  NUTRITION
+// ============================================================
+function viewNutrition() {
+  setTitle("Nutrition");
+  const d = ui.foodDay;
+  const entries = state.food[d] || [];
+  const t = foodTotals(entries);
+  const g = nutritionGoals();
+  const isToday = d === dayStr();
+  const pct = g ? Math.min(1, t.k / g.kcal) : 0;
+  const C = 2 * Math.PI * 52;
+  let html = `<div class="row between" style="margin-bottom:12px">
+      <button class="icon-btn" data-act="food-day" data-delta="-1">‹</button>
+      <b>${isToday ? "Aujourd'hui" : fmtDay(d, { weekday: "long", day: "numeric", month: "long" })}</b>
+      <button class="icon-btn" data-act="food-day" data-delta="1" ${isToday ? "disabled style='opacity:.3'" : ""}>›</button></div>
+    <div class="card"><div class="ring-wrap">
+      <svg class="ring" viewBox="0 0 120 120"><circle cx="60" cy="60" r="52" fill="none" stroke="#232731" stroke-width="12"/>
+        <circle cx="60" cy="60" r="52" fill="none" stroke="${g && t.k > g.kcal * 1.05 ? "#ff9f43" : "#c6ff3d"}" stroke-width="12" stroke-linecap="round"
+          stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - pct)}" transform="rotate(-90 60 60)"/>
+        <text x="60" y="58" text-anchor="middle" fill="#f1f3f7" font-size="24" font-weight="800">${Math.round(t.k)}</text>
+        <text x="60" y="78" text-anchor="middle" fill="#9aa1b1" font-size="12">kcal</text></svg>
+      <div class="grow">${g ? `<div class="muted small">Objectif ${g.kcal} kcal</div><div style="font-size:20px;font-weight:800">${g.kcal - Math.round(t.k) >= 0 ? `Reste ${g.kcal - Math.round(t.k)}` : `+${Math.round(t.k) - g.kcal} au-dessus`}</div>`
+        : `<p class="muted small">Remplis ton profil dans l'onglet <a href="#/corps">Corps</a> pour avoir ton objectif calorique.</p>`}
+        <div class="small" style="margin-top:6px">P ${Math.round(t.p)} g · G ${Math.round(t.c)} g · L ${Math.round(t.f)} g</div></div></div>
+      ${g ? `<div style="margin-top:8px">${macroBars(t, g, false)}</div>` : ""}</div>`;
+
+  for (const [k, label] of Object.entries(MEALS)) {
+    const items = entries.filter((e) => e.meal === k);
+    const mt = foodTotals(items);
+    html += `<div class="card"><div class="meal-head"><h3>${label} <span class="muted small">${items.length ? Math.round(mt.k) + " kcal" : ""}</span></h3>
+      <button class="btn sm primary" data-act="add-food" data-meal="${k}">＋ Ajouter</button></div>
+      ${items.map((e) => `<div class="food-line" data-act="edit-food" data-id="${e.id}"><span class="grow ellipsis">${esc(e.nom)} <span class="muted small">${Math.round(num(e.g))} g</span></span><b>${Math.round((num(e.k) * num(e.g)) / 100)} kcal</b></div>`).join("")}</div>`;
+  }
+
+  // Historique 7 derniers jours
+  html += `<div class="section-title">7 derniers jours</div><div class="card"><div class="chart-box"><canvas id="kcalChart"></canvas></div></div>`;
+  after(() => {
+    const days = [...Array(7)].map((_, i) => { const x = parseDay(d); x.setDate(x.getDate() - 6 + i); return dayStr(x); });
+    const ds = [{ label: "kcal", data: days.map((x) => Math.round(foodTotals(state.food[x] || []).k)), type: "bar", backgroundColor: "#c6ff3d99" }];
+    if (g) ds.push({ label: "Objectif", data: days.map(() => g.kcal), borderColor: "#ff9f43", pointRadius: 0, borderDash: [6, 4], type: "line" });
+    lineChart("kcalChart", days.map(fmtShort), ds, { zero: true });
+  });
+  return html;
+}
+
+let scanner = null;
+function stopScanner() {
+  if (scanner) { const s = scanner; scanner = null; s.stop().then(() => s.clear()).catch(() => {}); }
+}
+
+function addFoodModal(meal, tab = "scan") {
+  const tabs = [["scan", "📷 Scanner"], ["search", "🔍 Chercher"], ["recent", "🕘 Récents"], ["manual", "✏️ Manuel"]];
+  let body = `<div class="chips" style="margin-bottom:12px">${tabs.map(([k, l]) => `<button class="chip ${k === tab ? "on" : ""}" data-act="food-tab" data-tab="${k}" data-meal="${meal}">${l}</button>`).join("")}</div>`;
+  if (tab === "scan") {
+    body += `<div id="reader"></div><p class="muted small center" id="scanMsg">Vise le code-barres du produit</p>
+      <div class="row"><input id="codeIn" inputmode="numeric" placeholder="ou tape le code-barres"><button class="btn" data-act="code-go" data-meal="${meal}">OK</button></div>`;
+  } else if (tab === "search") {
+    body += `<div class="row"><input id="foodQ" placeholder="Ex : riz, poulet, Nutella…" autocomplete="off"><button class="btn" data-act="food-search" data-meal="${meal}">🔍</button></div>
+      <div id="foodRes" style="margin-top:8px">${basicFoodsHtml("", meal)}</div>`;
+  } else if (tab === "recent") {
+    body += state.recentFoods.length ? state.recentFoods.map((f, i) => foodRow(f, meal, `recent:${i}`)).join("") : `<div class="empty">Aucun aliment récent</div>`;
+  } else {
+    body += `<div class="stack"><label class="field">Nom<input id="mNom" placeholder="Ex : Sandwich maison"></label>
+      <p class="muted small" style="margin:0">Valeurs pour 100 g (regarde l'étiquette) :</p>
+      <div class="grid2"><label class="field">Calories (kcal)<input id="mK" inputmode="decimal"></label><label class="field">Protéines (g)<input id="mP" inputmode="decimal"></label>
+      <label class="field">Glucides (g)<input id="mC" inputmode="decimal"></label><label class="field">Lipides (g)<input id="mF" inputmode="decimal"></label></div>
+      <label class="field">Quantité mangée (g)<input id="mG" inputmode="decimal" value="100"></label>
+      <button class="btn primary block" data-act="manual-food" data-meal="${meal}">Ajouter</button></div>`;
+  }
+  openModal(`Ajouter – ${MEALS[meal]}`, body, stopScanner);
+  if (tab === "scan") startScanner(meal);
+  if (tab === "search") {
+    const q = $("foodQ");
+    q.addEventListener("input", () => { $("foodRes").innerHTML = basicFoodsHtml(q.value, meal); });
+    q.addEventListener("keydown", (e) => { if (e.key === "Enter") searchFood(q.value, meal); });
+  }
+}
+
+let foodCache = {};
+function foodRow(f, meal, ref) {
+  foodCache[ref] = f;
+  return `<div class="list-item" data-act="pick-food" data-ref="${esc(ref)}" data-meal="${meal}">
+    ${f.img ? `<img class="thumb" src="${esc(f.img)}" alt="" loading="lazy" style="object-fit:contain">` : ""}
+    <div class="grow"><b>${esc(f.nom)}</b><div class="muted small">${f.marque ? esc(f.marque) + " · " : ""}${Math.round(f.k)} kcal / 100 g</div></div><span class="arrow">＋</span></div>`;
+}
+function basicFoodsHtml(q, meal) {
+  const ql = q.toLowerCase().trim();
+  const list = BASIC_FOODS.filter(([n]) => !ql || n.toLowerCase().includes(ql)).slice(0, ql ? 30 : 12);
+  return `<p class="muted small">${ql ? "Aliments de base" : "Aliments de base — tape un nom puis 🔍 pour chercher aussi les produits du commerce"}</p>` +
+    list.map(([nom, k, p, c, f, portion]) => foodRow({ nom, k, p, c, f, portion }, meal, `basic:${nom}`)).join("") +
+    (ql ? `<button class="btn block" data-act="food-search" data-meal="${meal}">🔍 Chercher « ${esc(q)} » dans les produits du commerce</button>` : "");
+}
+
+// Open Food Facts : base de données gratuite et ouverte de produits alimentaires
+const OFF_FIELDS = "code,product_name,product_name_fr,brands,nutriments,serving_quantity,image_front_small_url";
+function mapOff(p, code) {
+  const n = p.nutriments || {};
+  const k = n["energy-kcal_100g"] ?? (n["energy_100g"] ? n["energy_100g"] / 4.184 : null);
+  if (k == null) return null;
+  return {
+    nom: p.product_name_fr || p.product_name || "Produit " + code, marque: (p.brands || "").split(",")[0],
+    k: r1(num(k)), p: r1(num(n.proteins_100g)), c: r1(num(n.carbohydrates_100g)), f: r1(num(n.fat_100g)),
+    portion: num(p.serving_quantity) || null, img: p.image_front_small_url || null, code,
+  };
+}
+async function fetchProduct(code) {
+  const r = await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json?fields=${OFF_FIELDS}`);
+  const j = await r.json();
+  return j.status === 1 ? mapOff(j.product, code) : null;
+}
+async function searchFood(q, meal) {
+  if (!q.trim()) return;
+  const res = $("foodRes");
+  res.innerHTML = basicFoodsHtml(q, meal).replace(/<button[^]*$/, "") + `<p class="muted center">Recherche des produits…</p>`;
+  try {
+    const r = await fetch(`https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(q)}&search_simple=1&action=process&json=1&page_size=25&fields=${OFF_FIELDS}`);
+    const j = await r.json();
+    const items = (j.products || []).map((p) => mapOff(p, p.code)).filter(Boolean);
+    if (!$("foodRes")) return;
+    $("foodRes").innerHTML = basicFoodsHtml(q, meal).replace(/<button[^]*$/, "") + `<p class="muted small">Produits du commerce</p>` +
+      (items.length ? items.map((f, i) => foodRow(f, meal, `off:${i}:${f.code}`)).join("") : `<div class="empty">Aucun produit trouvé</div>`);
+  } catch (e) {
+    if ($("foodRes")) $("foodRes").insertAdjacentHTML("beforeend", `<p class="center" style="color:var(--red)">Pas de connexion internet ?</p>`);
+  }
+}
+
+function startScanner(meal) {
+  if (typeof Html5Qrcode === "undefined") { $("scanMsg").textContent = "Scanner indisponible, tape le code."; return; }
+  const F = Html5QrcodeSupportedFormats;
+  scanner = new Html5Qrcode("reader", { formatsToSupport: [F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E], verbose: false });
+  const s = scanner;
+  s.start({ facingMode: "environment" }, { fps: 12, qrbox: (w) => ({ width: Math.min(280, w * 0.85), height: 120 }) },
+    (code) => { if (scanner !== s) return; stopScanner(); if (navigator.vibrate) navigator.vibrate(80); lookupCode(code, meal); },
+    () => {})
+    .catch(() => { if ($("scanMsg")) $("scanMsg").textContent = "Impossible d'ouvrir la caméra (autorise l'accès, ou tape le code-barres)."; });
+}
+
+async function lookupCode(code, meal) {
+  code = String(code).replace(/\D/g, "");
+  if (!code) return;
+  if ($("scanMsg")) $("scanMsg").textContent = `Code ${code} — recherche…`;
+  try {
+    const f = await fetchProduct(code);
+    if (!f) { toast("Produit introuvable 😕 Ajoute-le en manuel"); addFoodModal(meal, "manual"); return; }
+    foodForm(f, meal);
+  } catch (e) { toast("Pas de connexion internet ?"); }
+}
+
+// Formulaire quantité → calcul automatique des calories
+function foodForm(f, meal, entry) {
+  const g0 = entry ? entry.g : f.portion || 100;
+  openModal(entry ? "Modifier" : "Quantité", `<div class="stack">
+    <div class="row">${f.img ? `<img src="${esc(f.img)}" alt="" style="width:64px;height:64px;object-fit:contain;background:#fff;border-radius:10px">` : ""}
+      <div class="grow"><b>${esc(f.nom)}</b><div class="muted small">${f.marque ? esc(f.marque) + " · " : ""}pour 100 g : ${f.k} kcal · P ${f.p} · G ${f.c} · L ${f.f}</div></div></div>
+    <label class="field">Quantité mangée (grammes)<input id="qtyIn" inputmode="decimal" value="${g0}"></label>
+    <div class="chips">${[...new Set([f.portion, 30, 50, 100, 150, 200, 250].filter(Boolean))].map((q) => `<button class="chip" data-act="qty" data-v="${q}">${q} g${q === f.portion ? " (portion)" : ""}</button>`).join("")}</div>
+    <label class="field">Repas<select id="mealIn">${Object.entries(MEALS).map(([k, l]) => `<option value="${k}" ${k === meal ? "selected" : ""}>${l}</option>`).join("")}</select></label>
+    <div class="card center" style="margin:0"><div style="font-size:30px;font-weight:800" id="qtyK"></div><div class="muted small" id="qtyM"></div></div>
+    <button class="btn primary block" data-act="confirm-food">${entry ? "Enregistrer" : "Ajouter"}</button>
+    ${entry ? `<button class="btn danger block" data-act="del-food" data-id="${entry.id}">Supprimer</button>` : ""}</div>`);
+  const upd = () => {
+    const q = num($("qtyIn").value) / 100;
+    $("qtyK").textContent = `${Math.round(f.k * q)} kcal`;
+    $("qtyM").textContent = `Protéines ${r1(f.p * q)} g · Glucides ${r1(f.c * q)} g · Lipides ${r1(f.f * q)} g`;
+  };
+  $("qtyIn").addEventListener("input", upd); upd();
+  foodForm.current = { f, entry };
+}
+
+function confirmFood() {
+  const { f, entry } = foodForm.current;
+  const g = num($("qtyIn").value);
+  if (!g) return toast("Indique une quantité");
+  const meal = $("mealIn").value;
+  const list = (state.food[ui.foodDay] = state.food[ui.foodDay] || []);
+  if (entry) Object.assign(entry, { g, meal });
+  else list.push({ id: uid(), meal, g, nom: f.nom, marque: f.marque || "", k: f.k, p: f.p, c: f.c, f: f.f });
+  // Garde en mémoire les aliments récents (sans doublons)
+  const key = f.nom + "|" + (f.marque || "");
+  state.recentFoods = [{ nom: f.nom, marque: f.marque || "", k: f.k, p: f.p, c: f.c, f: f.f, portion: f.portion || null, img: f.img || null },
+    ...state.recentFoods.filter((r) => r.nom + "|" + (r.marque || "") !== key)].slice(0, 30);
+  save();
+  closeModal();
+  if (location.hash !== "#/nutrition") go("#/nutrition"); else route();
+  toast(`${Math.round((f.k * g) / 100)} kcal ajoutées`);
+}
+
+// ============================================================
+//  CORPS (profil + mensurations)
+// ============================================================
+const BODY_FIELDS = [["poids", "Poids (kg)"], ["gras", "Masse grasse (%)"], ["muscle", "Masse musculaire (kg)"], ["taille_cm", "Tour de taille (cm)"], ["bras", "Tour de bras (cm)"], ["poitrine", "Tour de poitrine (cm)"], ["cuisse", "Tour de cuisse (cm)"]];
+
+function viewBody() {
+  setTitle("Suivi corporel");
+  const p = state.profile;
+  const g = nutritionGoals();
+  const w = currentWeight(), h = num(p.taille);
+  const list = [...state.body].sort((a, b) => a.date.localeCompare(b.date));
+  const last = list[list.length - 1];
+  let html = "";
+
+  if (w && h) {
+    const imc = w / (h / 100) ** 2;
+    const cat = imc < 18.5 ? "Maigreur" : imc < 25 ? "Normal" : imc < 30 ? "Surpoids" : "Obésité";
+    const firstW = list.find((b) => num(b.poids));
+    const dW = firstW ? r1(w - num(firstW.poids)) : 0;
+    html += `<div class="grid3">
+      <div class="stat"><b>${r1(w)}</b><span>kg${list.length > 1 && dW ? ` (${dW > 0 ? "+" : ""}${dW})` : ""}</span></div>
+      <div class="stat"><b>${r1(imc)}</b><span>IMC · ${cat}</span></div>
+      <div class="stat"><b>${last && num(last.gras) ? r1(num(last.gras)) + "%" : "–"}</b><span>masse grasse</span></div></div>
+      <p class="muted small">ℹ️ L'IMC ne fait pas la différence entre muscle et gras : suis aussi ton tour de taille et tes photos.</p>`;
+  }
+
+  html += `<button class="btn primary block" data-act="add-body" style="margin:12px 0">＋ Nouvelle mesure</button>`;
+
+  if (list.length) {
+    const metric = ui.bodyMetric;
+    const avail = BODY_FIELDS.filter(([k]) => list.some((b) => num(b[k])));
+    html += `<div class="chips" style="margin-bottom:10px">${avail.map(([k, l]) => `<button class="chip ${k === metric ? "on" : ""}" data-act="body-metric" data-k="${k}">${l}</button>`).join("")}</div>
+      <div class="card"><div class="chart-box"><canvas id="bodyChart"></canvas></div></div>`;
+    after(() => {
+      const pts = list.filter((b) => num(b[metric]));
+      lineChart("bodyChart", pts.map((b) => fmtShort(b.date)), [{ label: BODY_FIELDS.find(([k]) => k === metric)[1], data: pts.map((b) => num(b[metric])) }]);
+    });
+    html += `<div class="section-title">Historique des mesures</div><div class="card">${[...list].reverse().map((b) => `<div class="list-item" data-act="edit-body" data-id="${b.id}">
+      <div class="grow"><b>${fmtDay(b.date)}</b><div class="muted small">${BODY_FIELDS.filter(([k]) => num(b[k])).map(([k, l]) => `${l.split(" (")[0]} ${b[k]}${l.match(/\((.*)\)/)[1]}`).join(" · ")}</div></div><span class="arrow">›</span></div>`).join("")}</div>`;
+  }
+
+  html += `<div class="section-title">Mon profil & objectif</div><div class="card stack">
+    <div class="grid2">
+      <label class="field">Sexe<select data-in="profile" data-k="sexe"><option value="h" ${p.sexe === "h" ? "selected" : ""}>Homme</option><option value="f" ${p.sexe === "f" ? "selected" : ""}>Femme</option></select></label>
+      <label class="field">Âge<input data-in="profile" data-k="age" inputmode="numeric" value="${esc(p.age)}"></label>
+      <label class="field">Taille (cm)<input data-in="profile" data-k="taille" inputmode="decimal" value="${esc(p.taille)}"></label>
+      <label class="field">Poids (kg)<input data-in="profile" data-k="poids" inputmode="decimal" value="${esc(p.poids)}" placeholder="${list.length ? "selon la dernière mesure" : ""}"></label>
+    </div>
+    <label class="field">Activité<select data-in="profile" data-k="activite">${Object.entries(ACTIVITES).map(([k, l]) => `<option value="${k}" ${String(p.activite) === k ? "selected" : ""}>${l}</option>`).join("")}</select></label>
+    <label class="field">Objectif<select data-in="profile" data-k="objectif">${Object.entries(OBJECTIFS).map(([k, o]) => `<option value="${k}" ${p.objectif === k ? "selected" : ""}>${o.nom}</option>`).join("")}</select></label>
+    <label class="field">Objectif calorique perso (optionnel)<input data-in="profile" data-k="kcalPerso" inputmode="numeric" value="${esc(p.kcalPerso)}" placeholder="Laisse vide pour le calcul auto"></label>
+    <button class="btn block" data-act="refresh">Calculer</button>
+    ${g ? `<div class="grid2">
+      <div class="stat"><b>${g.bmr}</b><span>kcal au repos (métabolisme)</span></div>
+      <div class="stat"><b>${g.tdee}</b><span>kcal pour maintenir</span></div>
+      <div class="stat" style="grid-column:span 2;border:1px solid var(--accent)"><b>${g.kcal} kcal / jour</b><span>pour ton objectif « ${OBJECTIFS[p.objectif].nom} »</span></div>
+      <div class="stat"><b>${g.prot} g</b><span>protéines</span></div><div class="stat"><b>${g.gluc} g</b><span>glucides</span></div>
+      <div class="stat"><b>${g.lip} g</b><span>lipides</span></div>
+    </div>` : `<p class="muted small">Remplis âge, taille et poids pour calculer tes besoins.</p>`}</div>`;
+  return html;
+}
+
+function bodyModal(entry) {
+  const b = entry || { date: dayStr() };
+  openModal(entry ? "Modifier la mesure" : "Nouvelle mesure", `<div class="stack">
+    <label class="field">Date<input type="date" id="bDate" value="${b.date}" max="${dayStr()}"></label>
+    <div class="grid2">${BODY_FIELDS.map(([k, l]) => `<label class="field">${l}<input id="b_${k}" inputmode="decimal" value="${esc(b[k] ?? "")}"></label>`).join("")}</div>
+    <p class="muted small" style="margin:0">Remplis seulement ce que tu as (le poids suffit). La masse grasse/musculaire vient d'une balance impédancemètre.</p>
+    <button class="btn primary block" data-act="save-body" data-id="${entry ? entry.id : ""}">Enregistrer</button>
+    ${entry ? `<button class="btn danger block" data-act="del-body" data-id="${entry.id}">Supprimer</button>` : ""}</div>`);
+}
+
+// ============================================================
+//  RÉGLAGES
+// ============================================================
+function viewSettings() {
+  setTitle("Réglages");
+  return `<div class="card stack"><h2>⏱️ Repos par défaut</h2>
+      <label class="field">Durée du chrono de repos (secondes)<input data-in="rest" inputmode="numeric" value="${state.settings.rest}"></label></div>
+    <div class="card stack"><h2>💾 Sauvegarde</h2>
+      <p class="muted small" style="margin:0">Tes données sont stockées uniquement sur ce téléphone. Fais une sauvegarde de temps en temps (ou avant de changer de téléphone).</p>
+      <button class="btn block" data-act="export">⬇️ Exporter mes données</button>
+      <label class="btn block">⬆️ Importer une sauvegarde<input type="file" accept=".json,application/json" id="importIn" hidden></label>
+      <button class="btn danger block" data-act="reset">🗑 Tout effacer</button></div>
+    <div class="card"><h2>📲 Installer l'appli</h2>
+      <p class="small"><b>Android (Chrome)</b> : menu ⋮ → « Ajouter à l'écran d'accueil » / « Installer l'application ».</p>
+      <p class="small"><b>iPhone (Safari)</b> : bouton Partager ⬆️ → « Sur l'écran d'accueil ».</p>
+      <p class="muted small">L'appli fonctionne ensuite hors-ligne (sauf la recherche/scan d'aliments qui a besoin d'internet).</p></div>
+    <p class="muted small center">GymTrack · 100% gratuit · Données aliments : Open Food Facts · Images d'exercices : free-exercise-db</p>`;
+}
+
+// ============================================================
+//  Actions (clics)
+// ============================================================
+const ACTIONS = {
+  go: (el) => { go(el.dataset.to); if (el.dataset.then === "add-food") setTimeout(() => addFoodModal(guessMeal()), 50); },
+  back: () => { if (history.length > 1) history.back(); else go("#/accueil"); },
+  "close-modal": closeModal,
+  refresh: () => route(),
+
+  // séances
+  "start-free": () => startSession("Séance du " + new Date().toLocaleDateString("fr-FR", { weekday: "long" }), []),
+  "start-program": (el) => startProgramDay(el.dataset.prog, +el.dataset.day),
+  "redo-session": (el) => { const s = state.sessions.find((x) => x.id === el.dataset.id); startSession(s.name, s.exercises.map((e) => ({ exId: e.exId, sets: e.sets.length }))); },
+  "del-session": (el) => { if (!confirm("Supprimer cette séance ?")) return; state.sessions = state.sessions.filter((s) => s.id !== el.dataset.id); save(); go("#/seances"); },
+  "pick-ex": () => pickExerciseModal((id) => { state.current.exercises.push({ exId: id, target: "", rest: state.settings.rest, sets: [newSet(), newSet(), newSet()] }); save(); route(); window.scrollTo(0, document.body.scrollHeight); }),
+  "pick-grp": (el) => pickExerciseModal.onGroup(el.dataset.g),
+  pick: (el) => pickExerciseModal.onPick(el.dataset.id),
+  "add-to-live": (el) => {
+    if (!state.current) startSession("Séance du " + new Date().toLocaleDateString("fr-FR", { weekday: "long" }), [{ exId: el.dataset.id, sets: 3 }]);
+    else { state.current.exercises.push({ exId: el.dataset.id, target: "", rest: state.settings.rest, sets: [newSet(), newSet(), newSet()] }); save(); go("#/live"); }
+  },
+  "add-set": (el) => { const e = state.current.exercises[+el.dataset.i]; e.sets.push(newSet(e.sets[e.sets.length - 1])); e.sets[e.sets.length - 1].done = false; save(); route(); },
+  "del-set": (el) => { state.current.exercises[+el.dataset.i].sets.pop(); save(); route(); },
+  "set-done": (el) => {
+    const e = state.current.exercises[+el.dataset.i], s = e.sets[+el.dataset.j], ex = exById(e.exId);
+    // Si la série est vide, on reprend les valeurs affichées en gris (dernière fois)
+    if (!s.done && !isFilled(ex.type, s)) {
+      el.closest("tr").querySelectorAll("input").forEach((inp) => { if (!inp.value && inp.placeholder !== "–") s[inp.dataset.k] = inp.placeholder; });
+      if (!isFilled(ex.type, s)) return toast("Remplis la série d'abord");
+    }
+    s.done = !s.done; save(); route();
+    if (s.done && e.rest) startRest(e.rest);
+  },
+  "ex-menu": (el) => {
+    const i = +el.dataset.i, e = state.current.exercises[i];
+    openModal(exById(e.exId).nom, `<div class="stack">
+      <button class="btn block" data-act="ex-info" data-id="${e.exId}">📖 Voir la technique</button>
+      <label class="field">Repos entre les séries (secondes)<input id="restIn" inputmode="numeric" value="${e.rest || state.settings.rest}"></label>
+      <button class="btn block" data-act="ex-rest" data-i="${i}">Enregistrer le repos</button>
+      <div class="grid2"><button class="btn" data-act="ex-move" data-i="${i}" data-d="-1">↑ Monter</button><button class="btn" data-act="ex-move" data-i="${i}" data-d="1">↓ Descendre</button></div>
+      <button class="btn block" data-act="ex-replace" data-i="${i}">🔄 Remplacer l'exercice</button>
+      <button class="btn danger block" data-act="ex-del" data-i="${i}">🗑 Retirer de la séance</button></div>`);
+  },
+  "ex-rest": (el) => { state.current.exercises[+el.dataset.i].rest = num($("restIn").value); save(); closeModal(); route(); },
+  "ex-move": (el) => {
+    const a = state.current.exercises, i = +el.dataset.i, j = i + +el.dataset.d;
+    if (j < 0 || j >= a.length) return; [a[i], a[j]] = [a[j], a[i]]; save(); closeModal(); route();
+  },
+  "ex-replace": (el) => { const i = +el.dataset.i; pickExerciseModal((id) => { const e = state.current.exercises[i]; e.exId = id; e.sets = e.sets.map(() => newSet()); save(); route(); }); },
+  "ex-del": (el) => { state.current.exercises.splice(+el.dataset.i, 1); save(); closeModal(); route(); },
+  "ex-info": (el) => { const ex = exById(el.dataset.id); openModal(ex.nom, exerciseDetailHtml(ex, false), () => clearInterval(animInt)); animateExercise(ex); },
+  "cancel-session": () => { if (confirm("Annuler la séance ? Rien ne sera enregistré.")) { state.current = null; stopRest(); save(); go("#/seances"); } },
+  "finish-session": finishModal,
+  feel: (el) => finishModal.setFeel(+el.dataset.v),
+  "save-session": saveSession,
+  "rest-add": () => { rest.end += 15000; tickRest(); },
+  "rest-stop": stopRest,
+
+  // exercices / programmes
+  "ex-grp": (el) => { ui.exGroup = el.dataset.g; route(); },
+  "prog-metric": (el) => { ui.progMetric = el.dataset.k; route(); },
+  "prog-filter": (el) => { ui.progFilter = el.dataset.k; route(); },
+  "set-program": (el) => { state.activeProgram = { id: el.dataset.id, next: 0 }; save(); route(); toast("Programme activé ⭐ Retrouve ta prochaine séance sur l'accueil"); },
+  "unset-program": () => { state.activeProgram = null; save(); route(); },
+
+  // nutrition
+  "food-day": (el) => { const d = parseDay(ui.foodDay); d.setDate(d.getDate() + +el.dataset.delta); if (dayStr(d) <= dayStr()) { ui.foodDay = dayStr(d); route(); } },
+  "add-food": (el) => addFoodModal(el.dataset.meal || guessMeal()),
+  "food-tab": (el) => addFoodModal(el.dataset.meal, el.dataset.tab),
+  "food-search": (el) => searchFood($("foodQ").value, el.dataset.meal),
+  "code-go": (el) => { stopScanner(); lookupCode($("codeIn").value, el.dataset.meal); },
+  "pick-food": (el) => {
+    const ref = el.dataset.ref;
+    const f = ref.startsWith("recent:") ? state.recentFoods[+ref.split(":")[1]] : foodCache[ref];
+    if (f) foodForm(f, el.dataset.meal);
+  },
+  "manual-food": (el) => {
+    const nom = $("mNom").value.trim() || "Aliment";
+    const f = { nom, marque: "", k: num($("mK").value), p: num($("mP").value), c: num($("mC").value), f: num($("mF").value), portion: null };
+    if (!f.k) return toast("Indique au moins les calories");
+    const meal = el.dataset.meal;
+    const g = num($("mG").value) || 100;
+    foodForm(f, meal); $("qtyIn").value = g; $("qtyIn").dispatchEvent(new Event("input"));
+  },
+  qty: (el) => { $("qtyIn").value = el.dataset.v; $("qtyIn").dispatchEvent(new Event("input")); },
+  "confirm-food": confirmFood,
+  "edit-food": (el) => { const e = (state.food[ui.foodDay] || []).find((x) => x.id === el.dataset.id); if (e) foodForm({ nom: e.nom, marque: e.marque, k: e.k, p: e.p, c: e.c, f: e.f }, e.meal, e); },
+  "del-food": (el) => { state.food[ui.foodDay] = state.food[ui.foodDay].filter((x) => x.id !== el.dataset.id); save(); closeModal(); route(); },
+
+  // corps
+  "add-body": () => bodyModal(),
+  "edit-body": (el) => bodyModal(state.body.find((b) => b.id === el.dataset.id)),
+  "body-metric": (el) => { ui.bodyMetric = el.dataset.k; route(); },
+  "save-body": (el) => {
+    const id = el.dataset.id;
+    const b = id ? state.body.find((x) => x.id === id) : { id: uid() };
+    b.date = $("bDate").value || dayStr();
+    let any = false;
+    for (const [k] of BODY_FIELDS) { const v = $("b_" + k).value.trim().replace(",", "."); b[k] = v; if (num(v)) any = true; }
+    if (!any) return toast("Remplis au moins une valeur");
+    if (!id) state.body.push(b);
+    if (!BODY_FIELDS.some(([k]) => k === ui.bodyMetric && num(b[k]))) ui.bodyMetric = num(b.poids) || !state.body.length ? "poids" : ui.bodyMetric;
+    save(); closeModal();
+    if (location.hash !== "#/corps") go("#/corps"); else route();
+    toast("Mesure enregistrée ✅");
+  },
+  "del-body": (el) => { if (!confirm("Supprimer cette mesure ?")) return; state.body = state.body.filter((b) => b.id !== el.dataset.id); save(); closeModal(); route(); },
+
+  // réglages
+  export: () => {
+    saveNow();
+    const blob = new Blob([JSON.stringify(state, null, 1)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = `gymtrack-sauvegarde-${dayStr()}.json`; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  },
+  reset: () => { if (confirm("Effacer TOUTES tes données ? (séances, repas, mesures)") && confirm("Vraiment sûr ? C'est définitif.")) { state = structuredClone(DEFAULT_STATE); saveNow(); go("#/accueil"); } },
+};
+
+function guessMeal() { const h = new Date().getHours(); return h < 11 ? "pdj" : h < 15 ? "dej" : h < 18 ? "snack" : "diner"; }
+
+document.addEventListener("click", (e) => {
+  const el = e.target.closest("[data-act]");
+  if (!el || el.disabled) return;
+  const fn = ACTIONS[el.dataset.act];
+  if (fn) { e.preventDefault(); fn(el); }
+});
+
+// Saisies (sans re-dessiner la page pour ne pas perdre le focus)
+document.addEventListener("input", (e) => {
+  const el = e.target;
+  switch (el.dataset.in) {
+    case "set": { const s = state.current.exercises[+el.dataset.i].sets[+el.dataset.j]; s[el.dataset.k] = el.value; save(); break; }
+    case "cur-name": state.current.name = el.value; save(); break;
+    case "profile": state.profile[el.dataset.k] = el.value; save(); break;
+    case "rest": state.settings.rest = num(el.value) || 90; save(); break;
+  }
+});
+document.addEventListener("change", (e) => {
+  if (e.target.dataset.in === "profile" && e.target.tagName === "SELECT") route();
+  if (e.target.id === "importIn" && e.target.files[0]) {
+    const r = new FileReader();
+    r.onload = () => {
+      try {
+        const data = JSON.parse(r.result);
+        if (!data || !Array.isArray(data.sessions)) throw new Error();
+        if (!confirm("Remplacer tes données actuelles par cette sauvegarde ?")) return;
+        localStorage.setItem(STORE_KEY, JSON.stringify(data));
+        state = load(); toast("Sauvegarde importée ✅"); go("#/accueil");
+      } catch (err) { toast("Fichier invalide"); }
+    };
+    r.readAsText(e.target.files[0]);
+  }
+});
+
+// ============================================================
+//  Démarrage
+// ============================================================
+if ("serviceWorker" in navigator && location.protocol !== "file:") {
+  navigator.serviceWorker.register("sw.js").catch(() => {});
+}
+if (!location.hash) location.replace("#/accueil");
+route();
