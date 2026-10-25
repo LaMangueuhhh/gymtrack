@@ -13,6 +13,9 @@ Toutes les données restent **sur ton téléphone** (aucun compte, aucun serveur
 - **Agenda** : calendrier des jours à la salle, heure d'arrivée / départ et temps passé (bouton « J'arrive » / « Je pars »).
 - **Exercices** : ~100 exercices en français avec images du mouvement, silhouette des muscles (vert = principal, jaune = secondaire), étapes, conseils et erreurs à éviter.
   Machines Technogym / Hammer Strength (type Fitness Park), calisthénie et étirements. Une machine absente de ta salle peut être masquée.
+- **Séances toutes faites** : 41 séances prêtes (full body, pecs, dos, jambes, fessiers, HIIT, machines, calisthénie, express 30 min, étirements…).
+- **Eau** : compteur de verres avec objectif journalier.
+- **Apple Santé** : envoi de l'eau, du poids, des séances et des calories via l'app Raccourcis de l'iPhone (guide dans Réglages → Apple Santé).
 - **Programmes** : débutant, 100% machines, prise de masse (PPL, haut/bas), sèche, perte de poids, force 5×5, calisthénie, étirements.
 - **Nutrition** : scan du code-barres (base Open Food Facts), recherche de produits, aliments de base, saisie manuelle.
   Calcul automatique des calories et macros selon la quantité, objectif journalier calculé selon ton profil et ton objectif.
@@ -45,6 +48,7 @@ python3 -m http.server 8000
 | `style.css` | Design (thème sombre) |
 | `app.js` | Toute la logique de l'appli |
 | `data.js` | Exercices, programmes, objectifs |
+| `seances.js` | Séances toutes faites |
 | `data-extra.js` | Machines de la salle, calisthénie, étirements |
 | `bodymap.js` | Silhouette des muscles travaillés |
 | `foods.js` | Aliments de base (valeurs / 100 g) |

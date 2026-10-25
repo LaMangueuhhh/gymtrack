@@ -12,7 +12,7 @@
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-180.png">
-  <link rel="stylesheet" href="style.css?v=3">
+  <link rel="stylesheet" href="style.css?v=4">
 </head>
 <body>
   <header class="topbar">
@@ -23,6 +23,8 @@
 
   <main id="app"></main>
 
+  <a id="liveBar" class="live-bar" href="#/live" hidden><span class="pulse"></span><span class="grow ellipsis" id="liveBarText"></span><b>Reprendre ›</b></a>
+
   <div id="restTimer" class="rest-timer" hidden>
     <span>Repos</span>
     <strong id="restTime">1:30</strong>
@@ -31,12 +33,12 @@
   </div>
 
   <nav class="tabbar">
-    <a href="#/accueil" data-tab="accueil"><span>🏠</span>Accueil</a>
-    <a href="#/agenda" data-tab="agenda"><span>📅</span>Agenda</a>
-    <a href="#/progres" data-tab="progres"><span>📈</span>Progrès</a>
-    <a href="#/exos" data-tab="exos"><span>📖</span>Exos</a>
-    <a href="#/nutrition" data-tab="nutrition"><span>🍽️</span>Nutrition</a>
-    <a href="#/corps" data-tab="corps"><span>📏</span>Corps</a>
+    <a href="#/accueil" data-tab="accueil"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg><span>Accueil</span></a>
+    <a href="#/entrainer" data-tab="entrainer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 6.5v11M17.5 6.5v11M3 9v6M21 9v6M6.5 12h11"/></svg><span>Entraîner</span></a>
+    <a href="#/agenda" data-tab="agenda"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4.5" width="18" height="16.5" rx="2.5"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4"/><path d="m8.5 15 2.3 2.3L15.5 13"/></svg><span>Agenda</span></a>
+    <a href="#/progres" data-tab="progres"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 20h18"/><path d="m4 15 5-5 4 4 7-7"/><path d="M15 7h5v5"/></svg><span>Progrès</span></a>
+    <a href="#/nutrition" data-tab="nutrition"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3v8a2 2 0 0 0 2 2v8M5 3v5M9 3v5M17 21V3c-2.2 1.2-3 3.7-3 7v4h3"/></svg><span>Nutrition</span></a>
+    <a href="#/corps" data-tab="corps"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="4.5" r="2"/><path d="M5 8.5h14M12 8.5V14m0 0-3.5 7M12 14l3.5 7"/></svg><span>Corps</span></a>
   </nav>
 
   <div id="modal" class="modal" hidden>
@@ -53,10 +55,11 @@
 
   <script src="vendor/chart.umd.js"></script>
   <script src="vendor/html5-qrcode.min.js"></script>
-  <script src="data.js?v=3"></script>
-  <script src="data-extra.js?v=3"></script>
-  <script src="bodymap.js?v=3"></script>
-  <script src="foods.js?v=3"></script>
-  <script src="app.js?v=3"></script>
+  <script src="data.js?v=4"></script>
+  <script src="data-extra.js?v=4"></script>
+  <script src="seances.js?v=4"></script>
+  <script src="bodymap.js?v=4"></script>
+  <script src="foods.js?v=4"></script>
+  <script src="app.js?v=4"></script>
 </body>
 </html>
