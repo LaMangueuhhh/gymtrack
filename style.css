@@ -490,3 +490,14 @@ input[type=range] { padding: 0; min-height: 30px; accent-color: var(--accent); b
 .ai-k { width: 52px; text-align: right; flex: none; }
 .spin { display: inline-block; animation: spin 1.4s ease-in-out infinite; }
 @keyframes spin { 50% { transform: scale(1.2) rotate(15deg); } }
+
+/* ---------- Pas ---------- */
+.steps-n { font-size: 32px; font-weight: 800; letter-spacing: -0.03em; line-height: 1; }
+.steps-bar { margin-top: 8px; }
+.steps-bar > div { background: linear-gradient(90deg, #4da3ff, #c6ff3d); }
+.steps-week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; height: 64px; margin-top: 12px; align-items: end; }
+.steps-week div { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; gap: 3px; }
+.steps-week i { width: 100%; max-width: 26px; border-radius: 5px; background: rgba(77,163,255,.45); display: block; }
+.steps-week div.ok i { background: var(--accent); }
+.steps-week div.sel i { outline: 2px solid var(--text); outline-offset: 1px; }
+.steps-week span { font-size: 10px; color: var(--muted); text-transform: uppercase; font-weight: 700; }

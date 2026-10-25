@@ -1,5 +1,5 @@
 // GymTrack — appli de suivi muscu / nutrition / corps.
-const APP_VERSION = "8 · 25/10/2026";
+const APP_VERSION = "9 · 25/10/2026";
 // Tout est stocké en local sur le téléphone (localStorage). Aucun compte, aucun serveur, 100% gratuit.
 
 // ============================================================
@@ -49,6 +49,7 @@ const DEFAULT_STATE = {
   defiRec: {},
   reminders: [],
   myWorkouts: [],
+  steps: {},
   settings: { rest: 90, glass: 250, waterGoal: "", health: { on: false }, defiOffset: 0 },
 };
 let state = load();
@@ -102,15 +103,17 @@ function dayGoals(d) {
   const g = nutritionGoals();
   if (!g) return null;
   const days = weekDays(d), idx = days.indexOf(d);
-  const eatenBefore = days.slice(0, idx).reduce((a, x) => a + (dayKcal(x) ?? g.kcal), 0);
+  // Les pas au-delà de ton activité habituelle ajoutent des calories à l'objectif du jour
+  const steps = stepBonus(d), stepsBefore = days.slice(0, idx).reduce((a, x) => a + stepBonus(x), 0);
+  const eatenBefore = days.slice(0, idx).reduce((a, x) => a + (dayKcal(x) ?? g.kcal + stepBonus(x)), 0);
   const weekEaten = eatenBefore + (dayKcal(d) || 0);
-  const info = { base: g.kcal, weekBudget: g.kcal * 7, weekEaten, days, idx, adaptive: state.settings.adaptive !== false };
-  if (!info.adaptive) return { ...g, ...info, delta: 0 };
-  const raw = (g.kcal * 7 - eatenBefore) / (7 - idx);
+  const info = { base: g.kcal, steps, weekBudget: g.kcal * 7 + stepsBefore + steps, weekEaten, days, idx, adaptive: state.settings.adaptive !== false };
+  const withMacros = (kcal) => ({ kcal, gluc: Math.max(0, Math.round((kcal - g.prot * 4 - g.lip * 9) / 4)) });
+  if (!info.adaptive) return { ...g, ...info, ...withMacros(g.kcal + steps), delta: 0 };
+  const raw = (g.kcal * 7 + stepsBefore - eatenBefore) / (7 - idx);
   const min = Math.max(MIN_KCAL(), Math.round(g.kcal * 0.75)), max = Math.round(g.kcal * 1.25);
-  const kcal = Math.round(Math.min(max, Math.max(min, raw)) / 10) * 10;
-  const gluc = Math.max(0, Math.round((kcal - g.prot * 4 - g.lip * 9) / 4));
-  return { ...g, ...info, kcal, gluc, delta: kcal - g.kcal, clamped: raw < min || raw > max };
+  const adj = Math.round(Math.min(max, Math.max(min, raw)) / 10) * 10;
+  return { ...g, ...info, ...withMacros(adj + steps), delta: adj - g.kcal, clamped: raw < min || raw > max };
 }
 
 function foodTotals(entries) {
@@ -402,6 +405,7 @@ function viewHome() {
     <div class="muted small">${df.items.map((it) => exById(it.exId).nom).slice(0, 3).join(" · ")}…</div>
     <div class="progress thin"><div style="width:${(df.done.length / df.items.length) * 100}%"></div></div></div>
     <div class="streak small-streak"><b>${dStreak}</b><span>jour${dStreak > 1 ? "s" : ""}</span></div></a>`;
+  html += stepsCard(dayStr());
   html += waterCard(dayStr());
 
   html += `<a class="card nutri-mini" href="#/nutrition"><div class="row between"><h3>🍽️ Calories</h3><span><b>${Math.round(today.k)}</b> <span class="muted small">${g ? "/ " + g.kcal : ""} kcal</span></span></div>
@@ -1241,11 +1245,12 @@ function viewNutrition() {
           stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - pct)}" transform="rotate(-90 60 60)"/>
         <text x="60" y="58" text-anchor="middle" fill="#f1f3f7" font-size="24" font-weight="800">${Math.round(t.k)}</text>
         <text x="60" y="78" text-anchor="middle" fill="#9aa1b1" font-size="12">kcal</text></svg>
-      <div class="grow">${g ? `<div class="muted small">Objectif ${g.kcal} kcal${g.delta ? ` <span class="adj ${g.delta < 0 ? "minus" : "plus"}">${g.delta > 0 ? "+" : ""}${g.delta}</span>` : ""}</div><div style="font-size:20px;font-weight:800">${g.kcal - Math.round(t.k) >= 0 ? `Reste ${g.kcal - Math.round(t.k)}` : `+${Math.round(t.k) - g.kcal} au-dessus`}</div>`
+      <div class="grow">${g ? `<div class="muted small">Objectif ${g.kcal} kcal${g.delta ? ` <span class="adj ${g.delta < 0 ? "minus" : "plus"}">${g.delta > 0 ? "+" : ""}${g.delta}</span>` : ""}${g.steps ? ` <span class="adj plus">🚶+${g.steps}</span>` : ""}</div><div style="font-size:20px;font-weight:800">${g.kcal - Math.round(t.k) >= 0 ? `Reste ${g.kcal - Math.round(t.k)}` : `+${Math.round(t.k) - g.kcal} au-dessus`}</div>`
         : `<p class="muted small">Remplis ton profil dans l'onglet <a href="#/corps">Corps</a> pour avoir ton objectif calorique.</p>`}
         <div class="small" style="margin-top:6px">P ${Math.round(t.p)} g · G ${Math.round(t.c)} g · L ${Math.round(t.f)} g</div></div></div>
       ${g ? `<div style="margin-top:8px">${macroBars(t, g, false)}</div>` : ""}
       ${state.settings.health?.on && state.settings.health.kcal !== false && t.k ? `<button class="btn sm block" style="margin-top:12px" data-act="health-kcal" data-d="${d}">❤️ Envoyer ${Math.max(0, Math.round(t.k) - (state.healthSent[d] || 0))} kcal à Santé</button>` : ""}</div>
+    ${stepsCard(d)}
     ${g ? weekBudgetCard(g, d) : ""}
     ${waterCard(d)}`;
 
@@ -1277,6 +1282,7 @@ function weekBudgetCard(g, d) {
     : g.delta < 0 ? `Tu as mangé plus que prévu les jours d'avant : <b style="color:var(--text)">${-g.delta} kcal de moins</b> aujourd'hui pour rester dans ton budget de la semaine.`
     : g.delta > 0 ? `Tu as mangé moins que prévu les jours d'avant : tu peux manger <b style="color:var(--text)">${g.delta} kcal de plus</b> aujourd'hui.`
     : "Tu es pile dans ton budget : objectif normal aujourd'hui.";
+  const stepsMsg = g.steps ? ` Tes pas t'ajoutent <b style="color:var(--green)">+${g.steps} kcal</b> aujourd'hui.` : "";
   return `<div class="card">
     <div class="row between"><h3>📅 Budget de la semaine</h3><span class="small"><b>${Math.round(g.weekEaten).toLocaleString("fr-FR")}</b> <span class="muted">/ ${g.weekBudget.toLocaleString("fr-FR")} kcal</span></span></div>
     <div class="progress ${g.weekEaten > g.weekBudget ? "over" : ""}" style="margin-top:10px"><div style="width:${pct}%"></div></div>
@@ -1285,7 +1291,7 @@ function weekBudgetCard(g, d) {
       const cls = future ? "future" : k == null ? "empty" : k > tg * 1.05 ? "over" : k < tg * 0.9 ? "under" : "ok";
       return `<div class="wd ${cls} ${x === d ? "sel" : ""}"><span>${L[i]}</span><b>${k == null ? (future ? tg : "–") : Math.round(k)}</b><small>${future ? "prévu" : "/ " + tg}</small></div>`;
     }).join("")}</div>
-    <p class="muted small" style="margin:10px 0 0">${msg}${g.clamped ? (g.idx < 6 ? " On ne descend jamais sous un minimum sain : le reste est étalé sur les jours suivants." : " On ne descend jamais sous un minimum sain : la semaine prochaine repart à zéro.") : ""}</p>
+    <p class="muted small" style="margin:10px 0 0">${msg}${stepsMsg}${g.clamped ? (g.idx < 6 ? " On ne descend jamais sous un minimum sain : le reste est étalé sur les jours suivants." : " On ne descend jamais sous un minimum sain : la semaine prochaine repart à zéro.") : ""}</p>
     <label class="switch-row" style="padding-bottom:0"><span class="small"><b>Objectif adaptatif</b><br><span class="muted">Ajuste chaque jour selon ce que tu as mangé avant dans la semaine</span></span>
       <input type="checkbox" class="switch" data-in="adaptive" ${g.adaptive ? "checked" : ""}></label>
   </div>`;
@@ -1533,6 +1539,11 @@ function viewSettings() {
       <label class="switch-row"><span><b>🚶 Marche inclinée à la fin</b><br><span class="muted small">Ajoutée à chaque séance de muscu (sauf cardio)</span></span>
         <input type="checkbox" class="switch" data-in="setting-bool" data-k="walk" ${state.settings.walk !== false ? "checked" : ""}></label>
       <label class="field" style="padding:10px 0">Durée de la marche (minutes)<input data-in="setting" data-k="walkMin" inputmode="numeric" value="${esc(state.settings.walkMin || 12)}"></label></div>
+    <div class="card stack"><h2>🚶 Pas</h2>
+      <div class="grid2"><label class="field">Objectif de pas / jour<input data-in="setting" data-k="stepGoal" inputmode="numeric" value="${esc(state.settings.stepGoal || "")}" placeholder="10000"></label>
+      <label class="field">Pas déjà inclus dans ton activité<input data-in="setting" data-k="stepBase" inputmode="numeric" value="${esc(state.settings.stepBase ?? "")}" placeholder="5000"></label></div>
+      <label class="switch-row" style="padding-bottom:0"><span class="small"><b>Ajouter les calories des pas à mon objectif</b><br><span class="muted">Plus tu marches, plus tu peux manger (seulement au-delà des pas déjà inclus)</span></span>
+        <input type="checkbox" class="switch" data-in="setting-bool" data-k="stepsInGoal" ${state.settings.stepsInGoal !== false ? "checked" : ""}></label></div>
     <div class="card stack"><h2>💧 Eau</h2>
       <div class="grid2"><label class="field">Taille d'un verre (ml)<input data-in="setting" data-k="glass" inputmode="numeric" value="${esc(state.settings.glass)}"></label>
       <label class="field">Objectif par jour (ml)<input data-in="setting" data-k="waterGoal" inputmode="numeric" value="${esc(state.settings.waterGoal)}" placeholder="auto : ${waterGoal()}"></label></div>
@@ -1679,6 +1690,18 @@ const ACTIONS = {
   "body-zoom": (el) => { bodyZoom.ex = BODY_REG[+el.dataset.i]; bodyZoom.view = "front"; bodyZoom.all = false; bodyZoom(); },
   "body-view": (el) => { bodyZoom.view = el.dataset.v; bodyZoom(); },
   "body-all": () => { bodyZoom.all = !bodyZoom.all; bodyZoom(); },
+
+  // pas
+  "steps-edit": (el) => stepsModal(el.dataset.d),
+  "steps-chip": (el) => { $("stepsIn").value = el.dataset.v; $("stepsIn").dispatchEvent(new Event("input")); },
+  "steps-save": (el) => {
+    const d = el.dataset.d, n = Math.round(num($("stepsIn").value));
+    if (n) state.steps[d] = n; else delete state.steps[d];
+    save(); closeModal(); route();
+    if (n) toast(`🚶 ${n.toLocaleString("fr-FR")} pas · 🔥 ${stepsKcal(n)} kcal${n >= stepGoal() ? " · objectif atteint 🎯" : ""}`);
+  },
+  "steps-health": () => { ui.awaitSteps = true; saveNow(); location.href = "shortcuts://run-shortcut?name=" + encodeURIComponent("GymTrack Pas"); },
+  "steps-paste": (el) => pasteSteps(el.dataset.d),
 
   // photo IA
   "ai-key-save": (el) => {
@@ -1942,6 +1965,10 @@ function bodyZoom() {
   if ($("modal").hidden || !$("bodyZoomBox")) openModal(ex.nom ? `Muscles : ${ex.nom}` : "Muscles travaillés", `<div id="bodyZoomBox">${html}</div>`);
   else $("bodyZoomBox").innerHTML = html;
 }
+
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && ui.awaitSteps) { ui.awaitSteps = false; setTimeout(() => { stepsModal(dayStr()); toast("Touche « 📋 Coller les pas copiés »"); }, 300); }
+});
 
 // Séance en cours : on sélectionne le contenu au toucher (on tape directement par-dessus)
 // et la touche « suivant » du clavier passe à la case suivante

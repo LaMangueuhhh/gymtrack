@@ -16,6 +16,7 @@ Toutes les données restent **sur ton téléphone** (aucun compte, aucun serveur
 - **Agenda salle / repos 😴 / flemme 🖕** : chaque jour se justifie, les jours oubliés sont signalés, rappel quotidien à 21h30.
 - **Créer ma séance** : choisis les groupes, l'appli propose les exos par mouvement et évite les doublons (max 2 par mouvement), avec les muscles couverts.
 - **Photo de repas analysée par IA** (Gemini, clé gratuite) : aliments, quantités et calories estimés, modifiables avant ajout.
+- **Compteur de pas** : saisie ou import depuis Apple Santé (raccourci + presse-papiers), km et calories brûlées ; les pas au-delà de ton activité habituelle s'ajoutent à ton objectif calorique.
 - **Calories adaptatives** : budget calculé sur la semaine ; si tu manges plus un jour, l'objectif des jours suivants baisse (et inversement), sans descendre sous un minimum sain.
 - **Notifications de motivation** : rappels programmables (motivation, séance, eau, défi, pesée, message perso) + guide Raccourcis pour les recevoir appli fermée sur iPhone.
 - **Échauffement + marche inclinée** ajoutés automatiquement au début / à la fin des séances de muscu (pas en cardio ni étirements).
@@ -61,6 +62,7 @@ python3 -m http.server 8000
 | `notifs.js` + `motivation.txt` | Rappels et phrases de motivation |
 | `defi.js` | Défi quotidien |
 | `ranks.js` | Rangs et standards de force |
+| `steps.js` | Compteur de pas |
 | `builder.js` | Créateur de séance |
 | `food-ai.js` | Analyse de photo de repas |
 | `alternatives.js` | Familles de mouvements et alternatives |
