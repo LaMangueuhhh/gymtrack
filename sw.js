@@ -1,6 +1,6 @@
 // Service worker : permet à l'appli de marcher hors-ligne.
-const VERSION = "gymtrack-v7";
-const SHELL = ["./", "index.html", "style.css", "app.js", "data.js", "data-extra.js", "seances.js", "alternatives.js", "ranks.js", "defi.js", "notifs.js", "motivation.txt", "bodymap.js", "foods.js", "manifest.json",
+const VERSION = "gymtrack-v8";
+const SHELL = ["./", "index.html", "style.css", "app.js", "data.js", "data-extra.js", "seances.js", "alternatives.js", "builder.js", "food-ai.js", "ranks.js", "defi.js", "notifs.js", "motivation.txt", "bodymap.js", "foods.js", "manifest.json",
   "vendor/chart.umd.js", "vendor/html5-qrcode.min.js", "icons/icon-192.png", "icons/icon-512.png"];
 
 self.addEventListener("install", (e) => {
@@ -16,7 +16,7 @@ self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== "GET") return;
   // Open Food Facts : toujours en ligne
-  if (url.hostname.includes("openfoodfacts")) return;
+  if (url.hostname.includes("openfoodfacts") || url.hostname.includes("googleapis")) return;
   // Images d'exercices : cache d'abord (une fois vues, elles restent dispo hors-ligne)
   if (url.hostname === "raw.githubusercontent.com") {
     e.respondWith(caches.open("gymtrack-img").then((c) => c.match(e.request).then((hit) => hit ||

@@ -13,6 +13,9 @@ Toutes les données restent **sur ton téléphone** (aucun compte, aucun serveur
 - **Agenda** : calendrier des jours à la salle, heure d'arrivée / départ et temps passé (bouton « J'arrive » / « Je pars »).
 - **Exercices** : ~100 exercices en français avec images du mouvement, silhouette des muscles (vert = principal, jaune = secondaire), étapes, conseils et erreurs à éviter.
   Machines Technogym / Hammer Strength (type Fitness Park), calisthénie et étirements. Une machine absente de ta salle peut être masquée.
+- **Agenda salle / repos 😴 / flemme 🖕** : chaque jour se justifie, les jours oubliés sont signalés, rappel quotidien à 21h30.
+- **Créer ma séance** : choisis les groupes, l'appli propose les exos par mouvement et évite les doublons (max 2 par mouvement), avec les muscles couverts.
+- **Photo de repas analysée par IA** (Gemini, clé gratuite) : aliments, quantités et calories estimés, modifiables avant ajout.
 - **Calories adaptatives** : budget calculé sur la semaine ; si tu manges plus un jour, l'objectif des jours suivants baisse (et inversement), sans descendre sous un minimum sain.
 - **Notifications de motivation** : rappels programmables (motivation, séance, eau, défi, pesée, message perso) + guide Raccourcis pour les recevoir appli fermée sur iPhone.
 - **Échauffement + marche inclinée** ajoutés automatiquement au début / à la fin des séances de muscu (pas en cardio ni étirements).
@@ -58,6 +61,8 @@ python3 -m http.server 8000
 | `notifs.js` + `motivation.txt` | Rappels et phrases de motivation |
 | `defi.js` | Défi quotidien |
 | `ranks.js` | Rangs et standards de force |
+| `builder.js` | Créateur de séance |
+| `food-ai.js` | Analyse de photo de repas |
 | `alternatives.js` | Familles de mouvements et alternatives |
 | `seances.js` | Séances toutes faites |
 | `data-extra.js` | Machines de la salle, calisthénie, étirements |

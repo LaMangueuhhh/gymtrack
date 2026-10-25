@@ -440,3 +440,53 @@ input[type=range] { padding: 0; min-height: 30px; accent-color: var(--accent); b
 .eq.home { background: rgba(77,163,255,.15); color: var(--blue); }
 .eq.machine { background: rgba(198,255,61,.12); color: var(--accent); }
 .swap-btn { font-size: 18px; font-weight: 700; color: var(--accent); }
+
+/* ---------- Agenda : statut du jour ---------- */
+.status-pick { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.status-pick button { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 12px 4px; border-radius: 14px; border: 2px solid var(--line); background: var(--card2); font-weight: 750; color: var(--text); cursor: pointer; }
+.status-pick button span { font-size: 30px; }
+.status-pick button.on.sp-gym { border-color: var(--accent); background: rgba(198,255,61,.1); }
+.status-pick button.on.sp-repos { border-color: var(--blue); background: rgba(77,163,255,.12); }
+.status-pick button.on.sp-flemme { border-color: var(--red); background: rgba(255,92,108,.12); }
+.cal-day.st-repos { background: rgba(77,163,255,.18); border-color: rgba(77,163,255,.5); }
+.cal-day.st-flemme { background: rgba(255,92,108,.16); border-color: rgba(255,92,108,.5); }
+.cal-day.st-repos small, .cal-day.st-flemme small { font-size: 13px; opacity: 1; }
+.cal-day.todo { border: 2px dashed var(--orange); }
+.cal-day.todo small { color: var(--orange); font-size: 12px; font-weight: 800; }
+.cal-legend { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-top: 12px; font-size: 12px; color: var(--muted); }
+.cal-legend i { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
+.cal-legend i.on { background: var(--accent); }
+.cal-legend i.todo { border: 2px dashed var(--orange); }
+.todo-card { border-color: rgba(255,159,67,.5); background: linear-gradient(160deg, #2b1f10 0%, var(--card) 60%); }
+.day-repos { border-color: rgba(77,163,255,.45); }
+.day-flemme { border-color: rgba(255,92,108,.45); }
+.status-emoji { font-size: 34px; }
+
+/* ---------- Créateur de séance ---------- */
+.chips.wrap { flex-wrap: wrap; overflow: visible; margin: 0; padding: 0; }
+.b-pick .b-ctrl { display: flex; gap: 6px; }
+.b-pick .icon-btn { width: 34px; height: 34px; font-size: 15px; }
+.b-pick .grow { cursor: pointer; }
+.b-fam-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 0 2px; }
+.fam-badge { font-size: 12px; font-weight: 750; padding: 2px 8px; border-radius: 8px; background: rgba(198,255,61,.12); color: var(--accent); white-space: nowrap; }
+.fam-badge.full { background: rgba(255,159,67,.15); color: var(--orange); }
+.b-fam.full { opacity: .75; }
+.list-item.dim { opacity: .55; }
+.b-add { width: 36px; height: 36px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); display: inline-flex; align-items: center; justify-content: center; font-weight: 800; font-size: 20px; flex: none; }
+.list-item.dim .b-add { background: var(--card2); color: var(--muted); }
+.mini-tag { display: inline-block; font-size: 11px; font-weight: 700; padding: 0 6px; border-radius: 6px; margin: 2px 4px 2px 0; }
+.mini-tag.main { background: rgba(34,197,94,.18); color: var(--green); }
+.mini-tag.sec { background: rgba(250,204,21,.15); color: var(--yellow); }
+.tag.warn { background: var(--orange); color: #2a1500; font-weight: 700; }
+
+/* ---------- Photo IA ---------- */
+.photo-btn { cursor: pointer; }
+.ai-photo { width: 100%; max-height: 260px; object-fit: cover; border-radius: 14px; display: block; }
+.ai-item { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.ai-item:last-child { border-bottom: 0; }
+.ai-item.off { opacity: .45; }
+.ai-check { width: 24px; min-height: 24px; height: 24px; padding: 0; accent-color: var(--accent); flex: none; }
+.ai-g { width: 68px; min-height: 40px; padding: 6px; text-align: center; font-weight: 700; flex: none; }
+.ai-k { width: 52px; text-align: right; flex: none; }
+.spin { display: inline-block; animation: spin 1.4s ease-in-out infinite; }
+@keyframes spin { 50% { transform: scale(1.2) rotate(15deg); } }

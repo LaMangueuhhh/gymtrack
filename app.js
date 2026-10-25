@@ -1,5 +1,5 @@
 // GymTrack — appli de suivi muscu / nutrition / corps.
-const APP_VERSION = "7 · 25/10/2026";
+const APP_VERSION = "8 · 25/10/2026";
 // Tout est stocké en local sur le téléphone (localStorage). Aucun compte, aucun serveur, 100% gratuit.
 
 // ============================================================
@@ -48,6 +48,7 @@ const DEFAULT_STATE = {
   defis: {},
   defiRec: {},
   reminders: [],
+  myWorkouts: [],
   settings: { rest: 90, glass: 250, waterGoal: "", health: { on: false }, defiOffset: 0 },
 };
 let state = load();
@@ -302,6 +303,7 @@ const ROUTES = {
   type: viewWorkout,
   sante: viewHealth,
   defi: viewDefi,
+  creer: viewBuilder,
   notifs: viewNotifs,
   rangs: viewRanks,
   progres: (id) => (id ? viewProgress(id) : viewProgressList()),
@@ -311,7 +313,7 @@ const ROUTES = {
   corps: viewBody,
   reglages: viewSettings,
 };
-const TAB_OF = { agenda: "progres", rangs: "progres", seances: "progres", seance: "progres", live: "entrainer", exos: "entrainer", exo: "entrainer", programmes: "entrainer", programme: "entrainer", type: "entrainer", reglages: "", sante: "", notifs: "" };
+const TAB_OF = { agenda: "progres", rangs: "progres", seances: "progres", seance: "progres", live: "entrainer", exos: "entrainer", exo: "entrainer", programmes: "entrainer", programme: "entrainer", type: "entrainer", creer: "entrainer", reglages: "", sante: "", notifs: "" };
 const TOP_LEVEL = ["accueil", "entrainer", "exos", "programmes", "defi", "agenda", "rangs", "seances", "progres", "nutrition", "corps"];
 // Onglets internes de « Progrès »
 const progSeg = (k) => `<div class="seg" style="margin-bottom:14px">${[["progres", "Exercices"], ["rangs", "Rangs"], ["agenda", "Agenda"]]
@@ -356,7 +358,7 @@ function viewHome() {
   const today = foodTotals(state.food[dayStr()] || []);
   const w = currentWeight();
   const h = new Date().getHours();
-  const monthDays = new Set([...state.visits.map((v) => v.date), ...state.sessions.map((s) => s.date)].filter((d) => d.startsWith(dayStr().slice(0, 7)))).size;
+  const monthDays = new Set([...state.visits.filter((v) => (v.status || "gym") === "gym").map((v) => v.date), ...state.sessions.map((s) => s.date)].filter((d) => d.startsWith(dayStr().slice(0, 7)))).size;
   let html = `<div class="hello"><h2>${h < 6 ? "Bonne nuit" : h < 18 ? "Salut" : "Bonsoir"} 👋</h2>
     <span class="muted" style="text-transform:capitalize">${new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })}</span></div>`;
 
@@ -366,7 +368,7 @@ function viewHome() {
       <a class="btn primary block" href="#/corps">Remplir mon profil</a></div>`;
   }
 
-  html += checkinCard();
+  html += checkinCard() + unfilledCard();
 
   // Séance du jour : prochaine séance du programme actif, sinon une proposition
   const ap = state.activeProgram && PROGRAMS.find((p) => p.id === state.activeProgram.id);
@@ -452,22 +454,69 @@ function visitMinutes(v) {
 }
 const fmtDur = (m) => (m < 60 ? `${m} min` : `${Math.floor(m / 60)}h${pad(m % 60)}`);
 const visitOf = (d) => state.visits.find((v) => v.date === d);
-const dayHasGym = (d) => !!visitOf(d) || state.sessions.some((s) => s.date === d);
+
+// Statut d'un jour : "gym" (salle), "repos" 😴 ou "flemme" 🖕
+const DAY_STATUS = {
+  gym: { icon: "🏋️", nom: "Salle" },
+  repos: { icon: "😴", nom: "Repos" },
+  flemme: { icon: "🖕", nom: "Flemme" },
+};
+const dayStatus = (d) => { const v = visitOf(d); if (v) return v.status || "gym"; return state.sessions.some((s) => s.date === d) ? "gym" : null; };
+const dayHasGym = (d) => dayStatus(d) === "gym";
+// Premier jour d'utilisation : on ne demande pas de remplir les jours d'avant
+function trackingStart() {
+  const dates = [state.settings.installDate, ...state.sessions.map((s) => s.date), ...state.visits.map((v) => v.date)].filter(Boolean).sort();
+  return dates[0] || dayStr();
+}
+// Jours passés (7 derniers) pas encore remplis
+function unfilledDays(n = 7) {
+  const start = trackingStart(), out = [];
+  for (let i = n; i >= 1; i--) { const x = new Date(); x.setDate(x.getDate() - i); const d = dayStr(x); if (d >= start && !dayStatus(d)) out.push(d); }
+  return out;
+}
+function setDayStatus(d, status) {
+  let v = visitOf(d);
+  if (!v) { v = { id: uid(), date: d, arrivee: "", depart: "", note: "" }; state.visits.push(v); }
+  v.status = status;
+  if (status !== "gym") { v.arrivee = ""; v.depart = ""; }
+  save();
+}
 
 function checkinCard() {
-  const v = visitOf(dayStr());
-  if (v && v.arrivee && !v.depart) {
+  const today = dayStr(), v = visitOf(today), st = dayStatus(today);
+  if (v && st === "gym" && v.arrivee && !v.depart) {
     const since = (toMin(nowHM()) - toMin(v.arrivee) + 1440) % 1440;
     return `<div class="card" style="border-color:var(--accent)"><div class="row">
       <div class="grow"><b>📍 À la salle depuis ${fmtDur(since)}</b><div class="muted small">Arrivé à ${v.arrivee}</div></div>
       <button class="btn primary" data-act="checkout">🚪 Je pars</button></div></div>`;
   }
-  if (v && v.depart) {
+  if (st === "gym") {
     return `<div class="card"><div class="row"><div class="grow"><b>✅ Salle faite aujourd'hui</b>
-      <div class="muted small">${v.arrivee || "?"} → ${v.depart} · ${fmtDur(visitMinutes(v))}</div></div>
-      <button class="btn sm" data-act="day" data-d="${v.date}">Modifier</button></div></div>`;
+      <div class="muted small">${v && v.depart ? `${v.arrivee || "?"} → ${v.depart} · ${fmtDur(visitMinutes(v))}` : "Séance enregistrée"}</div></div>
+      <button class="btn sm" data-act="day" data-d="${today}">Modifier</button></div></div>`;
   }
-  return `<button class="btn block" data-act="checkin" style="margin-bottom:12px">📍 J'arrive à la salle (${nowHM()})</button>`;
+  if (st) {
+    const S = DAY_STATUS[st];
+    return `<div class="card day-${st}"><div class="row"><span class="status-emoji">${S.icon}</span><div class="grow"><b>${st === "repos" ? "Jour de repos" : "Jour de flemme"}</b>
+      <div class="muted small">${st === "repos" ? "La récup fait partie de l'entraînement." : "Ça arrive… mais demain on y retourne."}</div></div>
+      <button class="btn sm" data-act="day" data-d="${today}">Modifier</button></div></div>`;
+  }
+  return `<div class="card checkin"><b>Aujourd'hui : salle, repos ou flemme ?</b>
+    <button class="btn primary block" data-act="checkin" style="margin-top:10px">📍 J'arrive à la salle (${nowHM()})</button>
+    <div class="grid2" style="margin-top:8px"><button class="btn" data-act="quick-status" data-d="${today}" data-s="repos">😴 Repos</button>
+      <button class="btn" data-act="quick-status" data-d="${today}" data-s="flemme">🖕 Flemme</button></div></div>`;
+}
+
+// Rappel des jours oubliés (accueil + agenda)
+function unfilledCard() {
+  const days = unfilledDays();
+  if (!days.length) return "";
+  const d = days[days.length - 1];
+  return `<div class="card todo-card"><b>📅 ${days.length > 1 ? `${days.length} jours pas remplis` : "Jour pas rempli"}</b>
+    <div class="muted small" style="margin:2px 0 10px">${fmtDay(d, { weekday: "long", day: "numeric", month: "long" })} : tu y es allé ou pas ?</div>
+    <div class="grid3"><button class="btn sm" data-act="day" data-d="${d}">🏋️ Salle</button>
+      <button class="btn sm" data-act="quick-status" data-d="${d}" data-s="repos">😴 Repos</button>
+      <button class="btn sm" data-act="quick-status" data-d="${d}" data-s="flemme">🖕 Flemme</button></div></div>`;
 }
 
 function viewAgenda() {
@@ -480,15 +529,15 @@ function agendaHtml() {
   const nbDays = new Date(y, m, 0).getDate();
   const offset = (first.getDay() + 6) % 7; // lundi = 0
   const monthDays = [...Array(nbDays)].map((_, i) => dayStr(new Date(y, m - 1, i + 1)));
-  const gymDays = monthDays.filter(dayHasGym);
-  const visits = state.visits.filter((v) => v.date.startsWith(ui.calMonth) && v.depart);
+  const count = (s) => monthDays.filter((d) => dayStatus(d) === s).length;
+  const visits = state.visits.filter((v) => v.date.startsWith(ui.calMonth) && v.depart && (v.status || "gym") === "gym");
   const total = visits.reduce((a, v) => a + visitMinutes(v), 0);
-  const today = dayStr();
+  const today = dayStr(), start = trackingStart();
 
   let html = state.current
     ? `<a class="btn primary block" href="#/live" style="margin-bottom:12px">⏱️ Reprendre la séance en cours</a>`
     : `<div class="grid2" style="margin-bottom:12px"><button class="btn primary" data-act="start-free">＋ Séance libre</button><a class="btn" href="#/programmes">📋 Programmes</a></div>`;
-  html += checkinCard();
+  html += checkinCard() + unfilledCard();
 
   html += `<div class="card"><div class="row between" style="margin-bottom:10px">
       <button class="icon-btn" data-act="cal-month" data-delta="-1">‹</button>
@@ -497,15 +546,20 @@ function agendaHtml() {
     <div class="cal">${["L", "M", "M", "J", "V", "S", "D"].map((d) => `<div class="cal-h">${d}</div>`).join("")}
       ${'<div></div>'.repeat(offset)}
       ${monthDays.map((d, i) => {
-        const v = visitOf(d), went = dayHasGym(d), min = v ? visitMinutes(v) : 0;
-        return `<button class="cal-day ${went ? "on" : ""} ${d === today ? "today" : ""}" data-act="day" data-d="${d}" ${d > today ? "disabled" : ""}>
-          <span>${i + 1}</span>${min ? `<small>${fmtDur(min)}</small>` : went ? "<small>✓</small>" : ""}</button>`;
+        const v = visitOf(d), st = dayStatus(d), min = v && st === "gym" ? visitMinutes(v) : 0;
+        const todo = !st && d < today && d >= start;
+        return `<button class="cal-day ${st === "gym" ? "on" : st ? "st-" + st : ""} ${todo ? "todo" : ""} ${d === today ? "today" : ""}" data-act="day" data-d="${d}" ${d > today ? "disabled" : ""}>
+          <span>${i + 1}</span>${st && st !== "gym" ? `<small>${DAY_STATUS[st].icon}</small>` : min ? `<small>${fmtDur(min)}</small>` : st ? "<small>✓</small>" : todo ? "<small>?</small>" : ""}</button>`;
       }).join("")}
     </div>
-    <p class="muted small center" style="margin-bottom:0">Touche un jour pour noter ton heure d'arrivée et de départ</p></div>
+    <div class="cal-legend"><span><i class="on"></i>Salle</span><span>😴 Repos</span><span>🖕 Flemme</span><span><i class="todo"></i>À remplir</span></div></div>
     <div class="grid3">
-      <div class="stat"><b>${gymDays.length}</b><span>jours à la salle</span></div>
-      <div class="stat"><b>${total ? fmtDur(total) : "–"}</b><span>temps total</span></div>
+      <div class="stat"><b>${count("gym")}</b><span>🏋️ jours à la salle</span></div>
+      <div class="stat"><b>${count("repos")}</b><span>😴 repos</span></div>
+      <div class="stat"><b style="color:${count("flemme") ? "var(--red)" : "inherit"}">${count("flemme")}</b><span>🖕 flemme</span></div>
+    </div>
+    <div class="grid2">
+      <div class="stat"><b>${total ? fmtDur(total) : "–"}</b><span>temps total à la salle</span></div>
       <div class="stat"><b>${visits.length ? fmtDur(Math.round(total / visits.length)) : "–"}</b><span>durée moyenne</span></div>
     </div>`;
 
@@ -518,13 +572,16 @@ function agendaHtml() {
 function dayModal(d) {
   const v = visitOf(d) || {};
   const sess = state.sessions.filter((s) => s.date === d);
+  dayModal.status = dayStatus(d) || "gym";
   openModal(fmtDay(d, { weekday: "long", day: "numeric", month: "long" }), `<div class="stack">
-    <div class="grid2"><label class="field">Arrivée<input type="time" id="vArr" value="${v.arrivee || ""}"></label>
-      <label class="field">Départ<input type="time" id="vDep" value="${v.depart || ""}"></label></div>
-    <div class="card center" style="margin:0"><div class="muted small">Temps passé à la salle</div><div style="font-size:26px;font-weight:800" id="vDur">–</div></div>
-    <label class="field">Note (optionnel)<input id="vNote" value="${esc(v.note || "")}" placeholder="Ex : salle blindée, cardio seulement…"></label>
-    <button class="btn primary block" data-act="save-visit" data-d="${d}">✅ J'y suis allé</button>
-    ${v.id ? `<button class="btn danger block" data-act="del-visit" data-d="${d}">Je n'y suis pas allé (effacer)</button>` : ""}
+    <div class="status-pick">${Object.entries(DAY_STATUS).map(([k, s]) => `<button class="${dayModal.status === k ? "on" : ""} sp-${k}" data-act="day-status" data-s="${k}"><span>${s.icon}</span>${s.nom}</button>`).join("")}</div>
+    <div id="gymFields" ${dayModal.status === "gym" ? "" : "hidden"} class="stack">
+      <div class="grid2"><label class="field">Arrivée<input type="time" id="vArr" value="${v.arrivee || ""}"></label>
+        <label class="field">Départ<input type="time" id="vDep" value="${v.depart || ""}"></label></div>
+      <div class="card center" style="margin:0"><div class="muted small">Temps passé à la salle</div><div style="font-size:26px;font-weight:800" id="vDur">–</div></div></div>
+    <label class="field">Note (optionnel)<input id="vNote" value="${esc(v.note || "")}" placeholder="Ex : courbatures, salle blindée, malade…"></label>
+    <button class="btn primary block" data-act="save-visit" data-d="${d}">Enregistrer</button>
+    ${v.id ? `<button class="btn danger block" data-act="del-visit" data-d="${d}">Effacer ce jour</button>` : ""}
     ${sess.length ? `<div class="section-title" style="margin-top:6px">Séances ce jour-là</div><div class="card" style="margin:0">${sess.map(sessionLine).join("")}</div>` : ""}
   </div>`);
   const upd = () => { const m = visitMinutes({ arrivee: $("vArr").value, depart: $("vDep").value }); $("vDur").textContent = m ? fmtDur(m) : "–"; };
@@ -872,7 +929,9 @@ function saveSession() {
   };
   state.sessions.push(s);
   const rankUps = exercises.map((e) => { const ex = exById(e.exId), ri = rankInfo(ex); return ri && ri.i > rankBefore[e.exId] && ri.i > 0 ? `${ex.nom} → ${RANKS[ri.i].nom}` : null; }).filter(Boolean);
-  if (!visitOf(c.date)) state.visits.push({ id: uid(), date: c.date, arrivee: nowHM(new Date(c.start)), depart: nowHM(), note: "" });
+  const vToday = visitOf(c.date);
+  if (!vToday) state.visits.push({ id: uid(), date: c.date, status: "gym", arrivee: nowHM(new Date(c.start)), depart: nowHM(), note: "" });
+  else if (vToday.status && vToday.status !== "gym") Object.assign(vToday, { status: "gym", arrivee: nowHM(new Date(c.start)), depart: nowHM() });
   if (c.programId && state.activeProgram && state.activeProgram.id === c.programId) {
     const p = PROGRAMS.find((x) => x.id === c.programId);
     state.activeProgram.next = (c.dayIdx + 1) % p.seances.length;
@@ -1014,6 +1073,7 @@ function startProgramDay(pid, idx) {
 //  ENTRAÎNER (séances toutes faites, programmes, exercices)
 // ============================================================
 // Durée estimée d'une séance type (en minutes)
+const allWorkouts = () => [...state.myWorkouts, ...WORKOUTS];
 function workoutMinutes(w) {
   let sec = 0;
   for (const [, sets, reps, restS] of w.ex) {
@@ -1044,14 +1104,15 @@ function viewTrain(tab) {
   const t = ui.trainTab;
   let html = state.current
     ? `<a class="btn primary block big" href="#/live">⏱️ Reprendre la séance en cours</a>`
-    : `<button class="btn primary block big" data-act="start-free">＋ Séance libre</button>`;
+    : `<div class="grid2"><a class="btn primary big" href="#/creer">✏️ Créer ma séance</a><button class="btn big" data-act="start-free">＋ Séance libre</button></div>`;
   html += `<div class="seg" style="margin:14px 0">${[["seances", "Séances prêtes"], ["programmes", "Programmes"], ["exos", "Exercices"]]
     .map(([k, l]) => `<button class="${t === k ? "on" : ""}" data-act="go" data-to="#/entrainer/${k}">${l}</button>`).join("")}</div>`;
   if (t === "programmes") html += viewPrograms();
   else if (t === "exos") html += viewExercises();
   else {
-    const list = WORKOUTS.filter((w) => ui.wCat === "Tous" || w.cat === ui.wCat);
-    html += `<div class="chips" style="margin-bottom:12px">${["Tous", ...WORKOUT_CATS].map((c) => `<button class="chip ${ui.wCat === c ? "on" : ""}" data-act="w-cat" data-c="${c}">${c}</button>`).join("")}</div>
+    const all = allWorkouts();
+    const list = all.filter((w) => ui.wCat === "Tous" || w.cat === ui.wCat);
+    html += `<div class="chips" style="margin-bottom:12px">${["Tous", ...(state.myWorkouts.length ? ["Mes séances"] : []), ...WORKOUT_CATS].map((c) => `<button class="chip ${ui.wCat === c ? "on" : ""}" data-act="w-cat" data-c="${c}">${c}</button>`).join("")}</div>
       <p class="muted small" style="margin-top:0">${list.length} séances toutes faites : choisis, appuie sur « Commencer », l'appli te guide.</p>
       <div class="card list-card">${list.map(workoutCard).join("")}</div>`;
   }
@@ -1060,7 +1121,7 @@ function viewTrain(tab) {
 }
 
 function viewWorkout(id) {
-  const w = WORKOUTS.find((x) => x.id === id);
+  const w = allWorkouts().find((x) => x.id === id);
   if (!w) { go("#/entrainer"); return; }
   setTitle(w.nom);
   const muscles = {};
@@ -1070,7 +1131,8 @@ function viewWorkout(id) {
       <div class="grid3"><div class="stat"><b>${workoutMinutes(w)}</b><span>minutes env.</span></div>
         <div class="stat"><b>${w.ex.length}</b><span>exercices</span></div>
         <div class="stat"><b style="font-size:16px;padding:5px 0">${levelDots(w.niveau)}</b><span>${LEVELS[w.niveau]}</span></div></div>
-      <button class="btn primary block big" style="margin-top:12px" data-act="start-workout" data-id="${w.id}">▶ Commencer</button></div>
+      <button class="btn primary block big" style="margin-top:12px" data-act="start-workout" data-id="${w.id}">▶ Commencer</button>
+      ${w.mine ? `<div class="grid2" style="margin-top:8px"><button class="btn sm" data-act="my-edit" data-id="${w.id}">✏️ Modifier</button><button class="btn sm danger" data-act="my-del" data-id="${w.id}">🗑 Supprimer</button></div>` : ""}</div>
     <div class="card"><h2>Muscles travaillés</h2>${bodyMap(fake)}</div>
     <div class="card list-card">${w.ex.map(([exId, sets, reps, restS]) => { const ex = exById(exId); return `<div class="list-item" data-act="ex-info" data-id="${exId}">
       <img class="thumb" src="${imgUrl(ex)}" alt="" loading="lazy"><div class="grow"><b>${esc(ex.nom)}</b>
@@ -1234,12 +1296,15 @@ function stopScanner() {
   if (scanner) { const s = scanner; scanner = null; s.stop().then(() => s.clear()).catch(() => {}); }
 }
 
-function addFoodModal(meal, tab = "scan") {
-  const tabs = [["scan", "📷 Scanner"], ["search", "🔍 Chercher"], ["recent", "🕘 Récents"], ["manual", "✏️ Manuel"]];
+function addFoodModal(meal, tab) {
+  tab = tab || (state.settings.aiKey ? "photo" : "scan");
+  const tabs = [["photo", "📸 Photo IA"], ["scan", "📷 Code-barres"], ["search", "🔍 Chercher"], ["recent", "🕘 Récents"], ["manual", "✏️ Manuel"]];
   let body = `<div class="chips" style="margin-bottom:12px">${tabs.map(([k, l]) => `<button class="chip ${k === tab ? "on" : ""}" data-act="food-tab" data-tab="${k}" data-meal="${meal}">${l}</button>`).join("")}</div>`;
   if (tab === "scan") {
     body += `<div id="reader"></div><p class="muted small center" id="scanMsg">Vise le code-barres du produit</p>
       <div class="row"><input id="codeIn" inputmode="numeric" placeholder="ou tape le code-barres"><button class="btn" data-act="code-go" data-meal="${meal}">OK</button></div>`;
+  } else if (tab === "photo") {
+    body += photoTabHtml(meal);
   } else if (tab === "search") {
     body += `<div class="row"><input id="foodQ" placeholder="Ex : riz, poulet, Nutella…" autocomplete="off"><button class="btn" data-act="food-search" data-meal="${meal}">🔍</button></div>
       <div id="foodRes" style="margin-top:8px">${basicFoodsHtml("", meal)}</div>`;
@@ -1255,6 +1320,10 @@ function addFoodModal(meal, tab = "scan") {
   }
   openModal(`Ajouter – ${MEALS[meal]}`, body, stopScanner);
   if (tab === "scan") startScanner(meal);
+  if (tab === "photo") {
+    foodAI.meal = meal;
+    $("aiPhoto")?.addEventListener("change", (e) => { if (e.target.files[0]) onFoodPhoto(e.target.files[0]); e.target.value = ""; });
+  }
   if (tab === "search") {
     const q = $("foodQ");
     q.addEventListener("input", () => { $("foodRes").innerHTML = basicFoodsHtml(q.value, meal); });
@@ -1611,10 +1680,61 @@ const ACTIONS = {
   "body-view": (el) => { bodyZoom.view = el.dataset.v; bodyZoom(); },
   "body-all": () => { bodyZoom.all = !bodyZoom.all; bodyZoom(); },
 
+  // photo IA
+  "ai-key-save": (el) => {
+    const k = $("aiKeyIn").value.trim();
+    if (k.length < 20) return toast("Colle ta clé API complète");
+    state.settings.aiKey = k; save(); addFoodModal(el.dataset.meal, "photo"); toast("🔑 Clé enregistrée, tu peux prendre une photo");
+  },
+  "ai-key-reset": () => { if (confirm("Supprimer la clé IA enregistrée ?")) { state.settings.aiKey = ""; save(); addFoodModal(foodAI.meal, "photo"); } },
+  "ai-add": () => {
+    const items = foodAI.items.filter((x) => x.on && x.g > 0);
+    if (!items.length) return toast("Coche au moins un aliment");
+    const list = (state.food[ui.foodDay] = state.food[ui.foodDay] || []);
+    for (const x of items) list.push({ id: uid(), meal: foodAI.meal, g: x.g, nom: x.nom, marque: "📸 IA", k: x.k, p: x.p, c: x.c, f: x.f });
+    const tot = Math.round(items.reduce((a, x) => a + (x.k * x.g) / 100, 0));
+    save(); closeModal();
+    if (location.hash !== "#/nutrition") go("#/nutrition"); else route();
+    toast(`📸 ${items.length} aliment${items.length > 1 ? "s" : ""} ajouté${items.length > 1 ? "s" : ""} · ${tot} kcal`);
+  },
+
+  // créateur de séance
+  "b-group": (el) => { const g = el.dataset.g; build.groups = build.groups.includes(g) ? build.groups.filter((x) => x !== g) : [...build.groups, g]; route(); },
+  "b-add": (el) => {
+    const ex = exById(el.dataset.id);
+    build.picks.push({ exId: ex.id, ...defaultScheme(ex) });
+    if (navigator.vibrate) navigator.vibrate(15);
+    route(); toast(`＋ ${ex.nom}`, 1400);
+  },
+  "b-del": (el) => { build.picks.splice(+el.dataset.i, 1); route(); },
+  "b-move": (el) => { const i = +el.dataset.i, a = build.picks; [a[i - 1], a[i]] = [a[i], a[i - 1]]; route(); },
+  "b-edit": (el) => buildEditModal(+el.dataset.i),
+  "b-edit-save": (el) => {
+    const p = build.picks[+el.dataset.i];
+    Object.assign(p, { sets: Math.max(1, Math.round(num($("bSets").value)) || 1), reps: $("bReps").value.trim() || p.reps, rest: Math.round(num($("bRest").value)) });
+    closeModal(); route();
+  },
+  "b-reset": () => { if (confirm("Effacer la séance en cours de création ?")) { build = { groups: build.groups, picks: [], name: "" }; route(); } },
+  "b-start": () => { const w = buildWorkout(); startSession(w.nom, w.ex.map(([exId, sets, reps, restS]) => ({ exId, sets, target: `${sets} × ${reps}`, rest: restS }))); },
+  "b-save": () => {
+    const w = buildWorkout(), id = build.editId || "my_" + uid();
+    const item = { id, mine: true, nom: w.nom, cat: "Mes séances", niveau: 2, desc: `Séance perso : ${build.groups.join(", ") || "sur mesure"}.`, groups: [...build.groups], ex: w.ex };
+    const i = state.myWorkouts.findIndex((x) => x.id === id);
+    if (i >= 0) state.myWorkouts[i] = item; else state.myWorkouts.unshift(item);
+    save(); build = { groups: [], picks: [], name: "" };
+    ui.wCat = "Mes séances"; go("#/entrainer/seances"); toast("💾 Séance enregistrée dans « Mes séances »");
+  },
+  "my-edit": (el) => {
+    const w = state.myWorkouts.find((x) => x.id === el.dataset.id);
+    build = { editId: w.id, name: w.nom, groups: w.groups || [], picks: w.ex.map(([exId, sets, reps, rest]) => ({ exId, sets, reps, rest })) };
+    go("#/creer");
+  },
+  "my-del": (el) => { if (!confirm("Supprimer cette séance ?")) return; state.myWorkouts = state.myWorkouts.filter((x) => x.id !== el.dataset.id); save(); go("#/entrainer/seances"); },
+
   // entraîner
   "w-cat": (el) => { ui.wCat = el.dataset.c; route(); },
   "start-workout": (el) => {
-    const w = WORKOUTS.find((x) => x.id === el.dataset.id);
+    const w = allWorkouts().find((x) => x.id === el.dataset.id);
     startSession(w.nom, w.ex.map(([exId, sets, reps, restS]) => ({ exId, sets, target: `${sets} × ${reps}`, rest: restS })), {}, w.cat);
   },
 
@@ -1645,7 +1765,7 @@ const ACTIONS = {
   day: (el) => dayModal(el.dataset.d),
   checkin: () => {
     const v = visitOf(dayStr());
-    if (v) { v.arrivee = nowHM(); v.depart = ""; } else state.visits.push({ id: uid(), date: dayStr(), arrivee: nowHM(), depart: "", note: "" });
+    if (v) { v.arrivee = nowHM(); v.depart = ""; v.status = "gym"; } else state.visits.push({ id: uid(), date: dayStr(), status: "gym", arrivee: nowHM(), depart: "", note: "" });
     save(); route(); toast("📍 Arrivée notée à " + nowHM() + ". Bonne séance !");
   },
   checkout: () => { const v = visitOf(dayStr()); v.depart = nowHM(); save(); route(); toast(`🚪 Tu es resté ${fmtDur(visitMinutes(v))}`); },
@@ -1653,8 +1773,19 @@ const ACTIONS = {
     const d = el.dataset.d;
     let v = visitOf(d);
     if (!v) { v = { id: uid(), date: d }; state.visits.push(v); }
-    Object.assign(v, { arrivee: $("vArr").value, depart: $("vDep").value, note: $("vNote").value.trim() });
+    const st = dayModal.status;
+    Object.assign(v, { status: st, arrivee: st === "gym" ? $("vArr").value : "", depart: st === "gym" ? $("vDep").value : "", note: $("vNote").value.trim() });
     save(); closeModal(); route();
+    if (st !== "gym") toast(st === "repos" ? "😴 Repos noté. Récupère bien !" : "🖕 Flemme notée… on se rattrape demain 💪");
+  },
+  "day-status": (el) => {
+    dayModal.status = el.dataset.s;
+    document.querySelectorAll("[data-act=day-status]").forEach((b) => b.classList.toggle("on", b.dataset.s === dayModal.status));
+    $("gymFields").hidden = dayModal.status !== "gym";
+  },
+  "quick-status": (el) => {
+    setDayStatus(el.dataset.d, el.dataset.s); route();
+    toast(el.dataset.s === "repos" ? "😴 Repos noté. Récupère bien !" : "🖕 Flemme notée… on se rattrape demain 💪");
   },
   "del-visit": (el) => { state.visits = state.visits.filter((v) => v.date !== el.dataset.d); save(); closeModal(); route(); },
 
@@ -1714,7 +1845,8 @@ const ACTIONS = {
   "force-update": () => { toast("Mise à jour…"); forceUpdate(); },
   export: () => {
     saveNow();
-    const blob = new Blob([JSON.stringify(state, null, 1)], { type: "application/json" });
+    // la clé IA n'est jamais mise dans la sauvegarde
+    const blob = new Blob([JSON.stringify({ ...state, settings: { ...state.settings, aiKey: undefined } }, null, 1)], { type: "application/json" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob); a.download = `gymtrack-sauvegarde-${dayStr()}.json`; a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
@@ -1740,9 +1872,17 @@ document.addEventListener("input", (e) => {
     case "profile": state.profile[el.dataset.k] = el.value; save(); break;
     case "rest": state.settings.rest = num(el.value) || 90; save(); break;
     case "setting": state.settings[el.dataset.k] = el.value; save(); break;
+    case "b-name": build.name = el.value; break;
+    case "ai-g": {
+      const x = foodAI.items[+el.dataset.i]; x.g = Math.round(num(el.value));
+      $("aiK" + el.dataset.i).textContent = Math.round((x.k * x.g) / 100);
+      $("aiTot").textContent = Math.round(foodAI.items.filter((y) => y.on).reduce((a, y) => a + (y.k * y.g) / 100, 0)) + " kcal";
+      break;
+    }
   }
 });
 document.addEventListener("change", (e) => {
+  if (e.target.dataset.in === "ai-on") { foodAI.items[+e.target.dataset.i].on = e.target.checked; $("aiOut").innerHTML = aiResultHtml(foodAI.res); return; }
   if (e.target.dataset.in === "home") { state.settings.home = { ...homeGear(), [e.target.dataset.k]: e.target.checked }; save(); route(); return; }
   if (e.target.dataset.in === "rem-on") { state.reminders[+e.target.dataset.i].on = e.target.checked; save(); return; }
   if (e.target.dataset.in === "adaptive") { state.settings.adaptive = e.target.checked; save(); route(); return; }
@@ -1760,6 +1900,7 @@ document.addEventListener("change", (e) => {
         const data = JSON.parse(r.result);
         if (!data || !Array.isArray(data.sessions)) throw new Error();
         if (!confirm("Remplacer tes données actuelles par cette sauvegarde ?")) return;
+        if (state.settings.aiKey) data.settings = { ...(data.settings || {}), aiKey: state.settings.aiKey };
         localStorage.setItem(STORE_KEY, JSON.stringify(data));
         state = load(); toast("Sauvegarde importée ✅"); go("#/accueil");
       } catch (err) { toast("Fichier invalide"); }
@@ -1837,6 +1978,14 @@ async function forceUpdate() {
     for (const k of await caches.keys()) if (k !== "gymtrack-img") await caches.delete(k);
   } catch (e) { /* tant pis, on recharge quand même */ }
   location.reload();
+}
+if (!state.settings.installDate) { state.settings.installDate = dayStr(); save(); }
+// Rappel quotidien « remplis ton agenda » ajouté une fois
+if (!state.settings.agendaReminder) {
+  state.settings.agendaReminder = true;
+  state.reminders.push({ id: uid(), type: "agenda", time: "21:30", days: [1, 2, 3, 4, 5, 6, 7], text: "", on: true });
+  state.reminders.sort((a, b) => a.time.localeCompare(b.time));
+  save();
 }
 if (!location.hash) location.replace("#/accueil");
 route();

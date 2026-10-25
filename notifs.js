@@ -47,8 +47,9 @@ const MOTIVATION = [
 ];
 
 const REMINDER_TYPES = {
+  agenda: { nom: "Remplir l'agenda", icon: "📅", text: () => "Remplis ton agenda : salle 🏋️, repos 😴 ou flemme 🖕 ?", skip: () => !!dayStatus(dayStr()) },
   motivation: { nom: "Motivation", icon: "💪", text: () => MOTIVATION[Math.floor(Math.random() * MOTIVATION.length)] },
-  seance: { nom: "Séance", icon: "🏋️", text: () => "C'est l'heure de la séance ! Ton programme t'attend 💪", skip: () => state.sessions.some((s) => s.date === dayStr()) || !!visitOf(dayStr()) },
+  seance: { nom: "Séance", icon: "🏋️", text: () => "C'est l'heure de la séance ! Ton programme t'attend 💪", skip: () => !!dayStatus(dayStr()) },
   defi: { nom: "Défi du jour", icon: "🔥", text: () => `Ton défi du jour n'est pas fini. Série actuelle : ${defiStreak()} jour(s) 🔥`, skip: () => !!state.defis[dayStr()]?.complete },
   eau: { nom: "Eau", icon: "💧", text: () => `Bois un verre d'eau ! (${((state.water[dayStr()] || 0) / 1000).toLocaleString("fr-FR")} L / ${(waterGoal() / 1000).toLocaleString("fr-FR")} L)`, skip: () => (state.water[dayStr()] || 0) >= waterGoal() },
   repas: { nom: "Repas", icon: "🍽️", text: () => "Pense à noter ton repas dans GymTrack 🍽️" },
@@ -58,6 +59,7 @@ const REMINDER_TYPES = {
 const DAYS = ["L", "M", "M", "J", "V", "S", "D"];
 const DAYS_LONG = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"];
 const PRESETS = [
+  { type: "agenda", time: "21:30", days: [1, 2, 3, 4, 5, 6, 7] },
   { type: "motivation", time: "08:00", days: [1, 2, 3, 4, 5, 6, 7] },
   { type: "seance", time: "17:30", days: [1, 3, 5] },
   { type: "eau", time: "11:00", days: [1, 2, 3, 4, 5, 6, 7] },
