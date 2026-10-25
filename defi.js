@@ -2,16 +2,25 @@
 // Le défi change chaque jour et devient plus dur au fil des défis réussis.
 
 // [idExercice, objectif au niveau 1, unité, info]
+// [idExercice, objectif au niveau 1, unité, info, matériel nécessaire]
+// Matériel : aucun, sauf "chaise" (chaise romaine), "lombaires" (chaise romaine avec banc à lombaires), "barre" (barre de traction)
 const DEFI_POOLS = {
-  pousse: [["pompes", 15, "reps"], ["c_pompes_diamant", 8, "reps"], ["c_pompes_declinees", 10, "reps", "pieds sur une chaise"], ["c_dips_triceps", 10, "reps", "sur une chaise ou un banc"]],
-  jambes: [["c_squat_pdc", 25, "reps"], ["c_fentes_marchees", 12, "reps/jambe"], ["c_pistol", 3, "reps/jambe", "tiens-toi à un mur si besoin"], ["step_ups", 12, "reps/jambe", "sur une marche ou une chaise"]],
-  gainage: [["gainage", 40, "s"], ["c_gainage_lateral", 25, "s/côté"], ["mountain_climbers", 30, "s"]],
-  bonus: [["tractions", 4, "reps", "si tu as une barre (sinon : rowing sous une table)"], ["c_superman", 15, "reps"], ["crunch", 20, "reps"], ["russian_twist", 24, "reps"], ["c_australian", 10, "reps", "sous une table solide"], ["releve_jambes", 8, "reps", "si tu as une barre (sinon : allongé au sol)"]],
+  pousse: [["pompes", 15, "reps"], ["c_pompes_diamant", 8, "reps"], ["pompes", 12, "reps", "mains larges, lentement (3 s en descente)"], ["cr_dips", 10, "reps", "sur ta chaise romaine", "chaise"]],
+  jambes: [["c_squat_pdc", 25, "reps"], ["c_fentes_marchees", 12, "reps/jambe"], ["c_pistol", 3, "reps/jambe", "tiens-toi à un mur si besoin"], ["c_pont", 20, "reps"]],
+  gainage: [["gainage", 40, "s"], ["c_gainage_lateral", 25, "s/côté"], ["mountain_climbers", 30, "s"], ["c_flutter", 30, "s"]],
+  bonus: [["c_superman", 15, "reps"], ["crunch", 20, "reps"], ["russian_twist", 24, "reps"], ["cr_releve_genoux", 10, "reps", "sur ta chaise romaine", "chaise"],
+    ["extensions_lombaires", 15, "reps", "sur ta chaise romaine (banc à lombaires)", "lombaires"], ["tractions", 4, "reps", "sur ta barre", "barre"]],
 };
+// Matériel à la maison (réglable dans l'onglet Défi)
+const homeGear = () => ({ chaise: true, lombaires: false, barre: false, ...(state.settings.home || {}) });
+const defiPool = (k) => DEFI_POOLS[k].filter((x) => !x[4] || homeGear()[x[4]]);
 const DEFI_LEVELS = ["", "Échauffement", "Débutant", "Régulier", "Solide", "Costaud", "Athlète", "Machine", "Bête", "Légende", "Dieu du pdc"];
 
 // Petit générateur pseudo-aléatoire : le même défi toute la journée
-function seeded(seed) { let x = seed % 2147483647; if (x <= 0) x += 2147483646; return () => (x = (x * 16807) % 2147483647) / 2147483647; }
+function seeded(seed) { // mulberry32 : deux jours qui se suivent donnent des tirages bien différents
+  let a = seed >>> 0;
+  return () => { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
 const daySeed = (d) => Number(d.replace(/-/g, ""));
 
 function defiDoneDays() { return Object.keys(state.defis).filter((d) => state.defis[d].complete).sort(); }
@@ -42,7 +51,7 @@ function defiOf(d) {
   const pick = (pool) => pool[Math.floor(rnd() * pool.length)];
   const f = 1 + (lvl - 1) * 0.22;
   const items = ["pousse", "jambes", "gainage", "bonus"].map((k) => {
-    const [exId, base, unit, info] = pick(DEFI_POOLS[k]);
+    const [exId, base, unit, info] = pick(defiPool(k));
     const step = unit.startsWith("s") ? 5 : 1;
     return { exId, target: Math.max(1, Math.round((base * f) / step) * step), unit, info };
   });
@@ -60,7 +69,7 @@ function viewDefi() {
     <div class="row between"><div><p class="eyebrow">Niveau ${df.lvl} · ${DEFI_LEVELS[df.lvl]}</p>
       <h2 style="margin:0">${complete ? "Défi réussi 🔥" : "Défi du jour"}</h2></div>
       <div class="streak"><b>${streak}</b><span>🔥 jour${streak > 1 ? "s" : ""}</span></div></div>
-    <p class="muted small">À la maison, sans matériel. Fais l'objectif total de chaque exercice en <b style="color:var(--text)">${df.sets} séries</b> ou plus, puis valide-le.</p>
+    <p class="muted small">À la maison, sans matériel${homeGear().chaise ? " (+ ta chaise romaine)" : ""}. Fais l'objectif total de chaque exercice en <b style="color:var(--text)">${df.sets} séries</b> ou plus, puis valide-le.</p>
     <div class="progress"><div style="width:${(doneN / df.items.length) * 100}%"></div></div>
     <div class="muted small" style="margin-top:6px">${doneN}/${df.items.length} exercices validés</div></div>`;
 
@@ -85,7 +94,8 @@ function viewDefi() {
       <div class="stat"><b>${df.lvl}/10</b><span>niveau</span></div></div></div>`;
 
   // Tests de records max (comptent pour les rangs)
-  const tests = ["pompes", "tractions", "c_squat_pdc", "gainage", "c_dips_triceps", "c_pompes_diamant"];
+  const gear = homeGear();
+  const tests = ["pompes", "c_pompes_diamant", "c_squat_pdc", "gainage", ...(gear.chaise ? ["cr_dips", "cr_releve_genoux"] : []), ...(gear.barre ? ["tractions"] : [])];
   html += `<div class="section-title">Mes records maison</div><div class="card list-card">${tests.map((id) => {
     const ex = exById(id), info = rankInfo(ex), rec = Math.max(0, ...defiRecords(id), rankValue(ex) || 0);
     return `<div class="list-item" data-act="defi-test" data-id="${id}">${rankBadge(info?.i ?? 0, 34)}
@@ -93,6 +103,11 @@ function viewDefi() {
       <span class="btn sm">Tester</span></div>`;
   }).join("")}</div>`;
 
+  html += `<div class="section-title">Mon matériel à la maison</div><div class="card list-card">
+    <label class="switch-row"><span><b>Chaise romaine</b><br><span class="muted small">Dips + relevés de genoux</span></span><input type="checkbox" class="switch" data-in="home" data-k="chaise" ${gear.chaise ? "checked" : ""}></label>
+    <label class="switch-row"><span><b>Banc à lombaires</b><br><span class="muted small">Si ta chaise romaine a aussi la position lombaires</span></span><input type="checkbox" class="switch" data-in="home" data-k="lombaires" ${gear.lombaires ? "checked" : ""}></label>
+    <label class="switch-row"><span><b>Barre de traction</b></span><input type="checkbox" class="switch" data-in="home" data-k="barre" ${gear.barre ? "checked" : ""}></label>
+    <p class="muted small" style="margin:8px 0">Le reste du défi est 100 % sans matériel. Changer le matériel modifie les défis à partir de demain.</p></div>`;
   html += `<div class="card"><h3>Difficulté</h3><p class="muted small" style="margin:4px 0 10px">Le niveau monte tout seul tous les 3 défis réussis. Trop facile ou trop dur ? Ajuste ici (s'applique à partir de demain si tu as déjà commencé aujourd'hui).</p>
     <div class="row"><button class="btn sm" data-act="defi-lvl" data-v="-1">− Plus facile</button><div class="grow center"><b>${defiLevel()}</b>/10</div><button class="btn sm" data-act="defi-lvl" data-v="1">＋ Plus dur</button></div></div>`;
   return html;

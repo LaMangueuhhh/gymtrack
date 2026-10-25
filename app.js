@@ -1,5 +1,5 @@
 // GymTrack — appli de suivi muscu / nutrition / corps.
-const APP_VERSION = "6 · 25/10/2026";
+const APP_VERSION = "7 · 25/10/2026";
 // Tout est stocké en local sur le téléphone (localStorage). Aucun compte, aucun serveur, 100% gratuit.
 
 // ============================================================
@@ -750,6 +750,7 @@ function viewLive() {
           ${e.target ? `<div class="small" style="color:var(--accent)">Objectif : ${esc(e.target)}${e.rest ? ` · repos ${fmtTime(e.rest)}` : ""}</div>` : ""}
           ${prev ? `<div class="prev">Dernière fois : ${prev.sets.filter((s) => isFilled(ex.type, s)).map((s) => setText(ex.type, s)).join(" · ")}</div>` : ""}
         </div>
+        ${e.role ? "" : `<button class="icon-btn swap-btn" data-act="ex-swap" data-i="${i}" aria-label="Remplacer par une alternative">⇄</button>`}
         <button class="icon-btn" data-act="ex-menu" data-i="${i}" aria-label="Options">⋯</button>
       </div>
       <table class="set-table"><tr><th>#</th>${fields.map(([, l]) => `<th>${l}</th>`).join("")}<th>✓</th></tr>
@@ -920,6 +921,7 @@ function exerciseDetailHtml(ex, withActions = true) {
     <div class="card"><h2>📋 Exécution</h2><ol class="steps">${ex.etapes.map((s) => `<li>${esc(s)}</li>`).join("")}</ol></div>
     <div class="card"><h2>✅ Conseils</h2><ul class="steps">${ex.conseils.map((s) => `<li>${esc(s)}</li>`).join("")}</ul></div>
     <div class="card"><h2>⚠️ Erreurs à éviter</h2><ul class="steps">${ex.erreurs.map((s) => `<li>${esc(s)}</li>`).join("")}</ul></div>
+    ${withActions && !ex.role && ex.groupe !== "Étirements" ? (() => { const alts = alternativesFor(ex.id, 6); return alts.length ? `<div class="section-title">🔄 Alternatives</div><p class="muted small" style="margin:-4px 4px 8px">Machine prise ou mouvement qui ne te plaît pas ? Ces exos travaillent pareil.</p><div class="card list-card">${alts.map((a) => altRow(a)).join("")}</div>` : ""; })() : ""}
     ${withActions && hasRank(ex) ? (() => { const ri = rankInfo(ex); return ri && !ri.noWeight ? `<a class="card row" href="#/progres/${ex.id}">${rankBadge(Math.max(0, ri.i), 40)}<div class="grow"><b>${ri.i < 0 ? "Pas encore classé" : "Rang " + RANKS[ri.i].nom}</b>
       <div class="muted small">${ri.next != null ? `Prochain : ${RANKS[ri.i + 1].nom} à ${fmtRankVal(ri.next, ri.t.unit)}` : "Rang maximum"}</div></div><span class="arrow">›</span></a>` : ""; })() : ""}
     ${withActions ? `<div class="grid2"><a class="btn" href="#/progres/${ex.id}">📈 Ma progression</a>
@@ -1528,13 +1530,19 @@ const ACTIONS = {
       <label class="field">Repos entre les séries (secondes)<input id="restIn" inputmode="numeric" value="${e.rest || state.settings.rest}"></label>
       <button class="btn block" data-act="ex-rest" data-i="${i}">Enregistrer le repos</button>
       <div class="grid2"><button class="btn" data-act="ex-move" data-i="${i}" data-d="-1">↑ Monter</button><button class="btn" data-act="ex-move" data-i="${i}" data-d="1">↓ Descendre</button></div>
-      <button class="btn block" data-act="ex-replace" data-i="${i}">🔄 Remplacer l'exercice</button>
+      <button class="btn block" data-act="ex-swap" data-i="${i}">🔄 Remplacer par une alternative</button>
       <button class="btn danger block" data-act="ex-del" data-i="${i}">🗑 Retirer de la séance</button></div>`);
   },
   "ex-rest": (el) => { state.current.exercises[+el.dataset.i].rest = num($("restIn").value); save(); closeModal(); route(); },
   "ex-move": (el) => {
     const a = state.current.exercises, i = +el.dataset.i, j = i + +el.dataset.d;
     if (j < 0 || j >= a.length) return; [a[i], a[j]] = [a[j], a[i]]; save(); closeModal(); route();
+  },
+  "ex-swap": (el) => swapModal(+el.dataset.i),
+  "swap-to": (el) => {
+    const e = state.current.exercises[+el.dataset.i], old = exById(e.exId).nom;
+    e.exId = el.dataset.id; e.sets = e.sets.map(() => newSet());
+    save(); closeModal(); route(); toast(`⇄ ${old} → ${exById(e.exId).nom}`);
   },
   "ex-replace": (el) => { const i = +el.dataset.i; pickExerciseModal((id) => { const e = state.current.exercises[i]; e.exId = id; e.sets = e.sets.map(() => newSet()); save(); route(); }); },
   "ex-del": (el) => { state.current.exercises.splice(+el.dataset.i, 1); save(); closeModal(); route(); },
@@ -1735,6 +1743,7 @@ document.addEventListener("input", (e) => {
   }
 });
 document.addEventListener("change", (e) => {
+  if (e.target.dataset.in === "home") { state.settings.home = { ...homeGear(), [e.target.dataset.k]: e.target.checked }; save(); route(); return; }
   if (e.target.dataset.in === "rem-on") { state.reminders[+e.target.dataset.i].on = e.target.checked; save(); return; }
   if (e.target.dataset.in === "adaptive") { state.settings.adaptive = e.target.checked; save(); route(); return; }
   if (e.target.dataset.in === "setting-bool") { state.settings[e.target.dataset.k] = e.target.checked; save(); return; }

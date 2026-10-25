@@ -48,7 +48,8 @@ const RANK_REPS = {
   c_squat_pdc: [15, 30, 45, 65, 85, 110], c_fentes_marchees: [10, 20, 30, 40, 55, 70], c_toes_to_bar: [1, 5, 10, 15, 20, 28],
   releve_jambes: [3, 8, 13, 18, 25, 32], crunch: [15, 30, 45, 60, 80, 100], russian_twist: [15, 30, 45, 60, 80, 100],
   extensions_lombaires: [8, 15, 22, 30, 40, 50], c_superman: [10, 20, 30, 40, 55, 70],
-  gainage: [30, 60, 90, 120, 180, 300], c_gainage_lateral: [20, 40, 60, 90, 120, 180], mountain_climbers: [20, 40, 60, 90, 120, 180],
+  cr_dips: [3, 8, 15, 22, 30, 40], cr_releve_genoux: [3, 8, 13, 18, 25, 32], c_pont: [15, 25, 35, 50, 70, 90],
+  gainage: [30, 60, 90, 120, 180, 300], c_flutter: [20, 40, 60, 90, 120, 180], c_gainage_lateral: [20, 40, 60, 90, 120, 180], mountain_climbers: [20, 40, 60, 90, 120, 180],
 };
 const LOWER_BODY = new Set(["Jambes"]);
 

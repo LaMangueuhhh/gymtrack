@@ -414,3 +414,51 @@ EXERCISES.push(
   },
 );
 const WARMUP = [["e_bras", 1, "30 s"], ["e_hanches", 1, "30 s"], ["e_rotation", 1, "30 s"], ["e_inchworm", 1, "5"], ["s_worlds", 1, "5/côté"]];
+
+// ================= MAISON (sans matériel + chaise romaine) =================
+EXERCISES.push(
+  {
+    id: "cr_dips", nom: "Dips à la chaise romaine", groupe: "Calisthénie", type: "pdc", maison: "chaise",
+    img: "Parallel_Bar_Dip", materiel: "Chaise romaine (poignées dips)",
+    muscles: ["triceps", "pecs"], secondaires: ["epaules"],
+    etapes: ["Mains sur les poignées, bras tendus, pieds décollés.", "Descends jusqu'à ce que les coudes fassent ~90°.", "Remonte en poussant fort."],
+    conseils: ["Buste droit = triceps, penché en avant = pecs.", "Trop dur ? Garde un pied posé sur la marche pour t'aider."],
+    erreurs: ["Descendre trop bas (épaules).", "Hausser les épaules."],
+  },
+  {
+    id: "cr_releve_genoux", nom: "Relevé de genoux (chaise romaine)", groupe: "Abdos", type: "pdc", maison: "chaise",
+    img: "Knee_Hip_Raise_On_Parallel_Bars", materiel: "Chaise romaine",
+    muscles: ["abdos"], secondaires: ["obliques"],
+    etapes: ["Dos collé au dossier, avant-bras sur les accoudoirs.", "Monte les genoux vers la poitrine en enroulant le bassin.", "Redescends lentement sans te balancer."],
+    conseils: ["Plus dur : jambes tendues.", "Pour les obliques : monte les genoux vers une épaule puis l'autre."],
+    erreurs: ["Se balancer.", "Juste lever les jambes sans enrouler le bassin."],
+  },
+  {
+    id: "c_pont", nom: "Pont fessier", groupe: "Calisthénie", type: "pdc",
+    img: "Butt_Lift_Bridge", materiel: "Aucun",
+    muscles: ["fessiers"], secondaires: ["ischios", "lombaires"],
+    etapes: ["Allongé sur le dos, genoux pliés, pieds à plat.", "Monte les hanches en serrant les fessiers.", "Tiens 1 s en haut puis redescends."],
+    conseils: ["Plus dur : sur une jambe."], erreurs: ["Cambrer le bas du dos au lieu de serrer les fessiers."],
+  },
+  {
+    id: "c_flutter", nom: "Battements de jambes (flutter kicks)", groupe: "Abdos", type: "temps",
+    img: "Flutter_Kicks", materiel: "Aucun",
+    muscles: ["abdos"], secondaires: ["quadriceps"],
+    etapes: ["Allongé sur le dos, mains sous les fesses.", "Décolle les jambes tendues de quelques cm.", "Fais de petits battements haut/bas."],
+    conseils: ["Bas du dos plaqué au sol."], erreurs: ["Dos qui se creuse."],
+  },
+);
+EXERCISES.find((e) => e.id === "extensions_lombaires").maison = "lombaires";
+EXERCISES.find((e) => e.id === "c_pont").aussi = ["Jambes"];
+
+WORKOUT_CATS.unshift("Maison");
+WORKOUTS.unshift(
+  { id: "w_maison_fb", nom: "Maison – Full body", cat: "Maison", niveau: 1, desc: "Sans matériel : tout le corps dans ton salon.",
+    ex: [["pompes", 4, "max", 60], ["c_squat_pdc", 4, "20", 60], ["c_fentes_marchees", 3, "12/jambe", 60], ["c_pont", 3, "15", 45], ["c_superman", 3, "15", 30], ["gainage", 3, "45 s", 30]] },
+  { id: "w_maison_haut", nom: "Maison – Haut du corps (chaise romaine)", cat: "Maison", niveau: 2, desc: "Pompes + dips et abdos sur ta chaise romaine.",
+    ex: [["cr_dips", 4, "max", 90], ["pompes", 4, "max", 60], ["c_pompes_diamant", 3, "10", 60], ["cr_releve_genoux", 3, "12", 45], ["c_gainage_lateral", 2, "30 s", 30]] },
+  { id: "w_maison_abdos", nom: "Maison – Abdos chaise romaine", cat: "Maison", niveau: 2, desc: "Sangle abdo complète en 20 min.",
+    ex: [["cr_releve_genoux", 4, "12", 45], ["crunch", 3, "20", 30], ["russian_twist", 3, "24", 30], ["c_flutter", 3, "30 s", 30], ["gainage", 3, "45 s", 30]] },
+  { id: "w_maison_jambes", nom: "Maison – Jambes", cat: "Maison", niveau: 2, desc: "Cuisses et fessiers sans aucune charge.",
+    ex: [["c_squat_pdc", 4, "25", 60], ["c_fentes_marchees", 4, "12/jambe", 60], ["c_pistol", 3, "5/jambe", 90], ["c_pont", 4, "20", 45], ["mountain_climbers", 3, "30 s", 30]] },
+);

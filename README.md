@@ -16,7 +16,8 @@ Toutes les données restent **sur ton téléphone** (aucun compte, aucun serveur
 - **Calories adaptatives** : budget calculé sur la semaine ; si tu manges plus un jour, l'objectif des jours suivants baisse (et inversement), sans descendre sous un minimum sain.
 - **Notifications de motivation** : rappels programmables (motivation, séance, eau, défi, pesée, message perso) + guide Raccourcis pour les recevoir appli fermée sur iPhone.
 - **Échauffement + marche inclinée** ajoutés automatiquement au début / à la fin des séances de muscu (pas en cardio ni étirements).
-- **Défi du jour** : 4 exos maison (pompes, squats, gainage, tractions…), série de jours 🔥, niveau qui monte, chrono, tests de records.
+- **Alternatives d'exercices** : bouton ⇄ en séance pour remplacer un exo (machine prise, mouvement qui ne plaît pas) par un exo équivalent, gardant séries et objectif.
+- **Défi du jour** : 4 exos maison 100 % sans matériel (+ chaise romaine / barre si activées), série de jours 🔥, niveau qui monte, chrono, tests de records.
 - **Rangs** : Fer → Bronze → Argent → Or → Platine → Diamant → Champion sur chaque exo, calculés selon ton poids (1RM estimé) ou tes reps max.
 - **Schéma anatomique détaillé** : muscles découpés en chefs, vue zoomée avec le nom de chaque muscle.
 - **Séances toutes faites** : 41 séances prêtes (full body, pecs, dos, jambes, fessiers, HIIT, machines, calisthénie, express 30 min, étirements…).
@@ -57,6 +58,7 @@ python3 -m http.server 8000
 | `notifs.js` + `motivation.txt` | Rappels et phrases de motivation |
 | `defi.js` | Défi quotidien |
 | `ranks.js` | Rangs et standards de force |
+| `alternatives.js` | Familles de mouvements et alternatives |
 | `seances.js` | Séances toutes faites |
 | `data-extra.js` | Machines de la salle, calisthénie, étirements |
 | `bodymap.js` | Silhouette des muscles travaillés |
