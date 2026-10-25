@@ -9,9 +9,11 @@ Toutes les données restent **sur ton téléphone** (aucun compte, aucun serveur
 - **Séances** : séries / reps / kg, poids du corps, gainage (secondes), cardio (min + km).
   Affiche ce que tu as fait la dernière fois, chrono de repos automatique (vibration + bip), détection des records 🏆.
 - **Ressenti** : fatigue /10, humeur et notes à la fin de chaque séance.
-- **Progression** : courbes par exercice (1RM estimé, charge max, volume…), volume et fatigue par séance.
-- **Exercices** : ~50 exercices en français avec images du mouvement, silhouette des muscles travaillés, étapes, conseils et erreurs à éviter.
-- **Programmes** : débutant full body, prise de masse (PPL, haut/bas), sèche, perte de poids, force 5×5. La prochaine séance s'affiche sur l'accueil.
+- **Progrès** : pour chaque exercice, comparaison avec la fois d'avant (plus lourd, plus de reps, tenu plus longtemps…) + courbes (1RM estimé, charge max, volume).
+- **Agenda** : calendrier des jours à la salle, heure d'arrivée / départ et temps passé (bouton « J'arrive » / « Je pars »).
+- **Exercices** : ~100 exercices en français avec images du mouvement, silhouette des muscles (vert = principal, jaune = secondaire), étapes, conseils et erreurs à éviter.
+  Machines Technogym / Hammer Strength (type Fitness Park), calisthénie et étirements. Une machine absente de ta salle peut être masquée.
+- **Programmes** : débutant, 100% machines, prise de masse (PPL, haut/bas), sèche, perte de poids, force 5×5, calisthénie, étirements.
 - **Nutrition** : scan du code-barres (base Open Food Facts), recherche de produits, aliments de base, saisie manuelle.
   Calcul automatique des calories et macros selon la quantité, objectif journalier calculé selon ton profil et ton objectif.
 - **Corps** : poids, % de gras, masse musculaire, tours de taille/bras/poitrine/cuisse, IMC, courbes.
@@ -43,6 +45,8 @@ python3 -m http.server 8000
 | `style.css` | Design (thème sombre) |
 | `app.js` | Toute la logique de l'appli |
 | `data.js` | Exercices, programmes, objectifs |
+| `data-extra.js` | Machines de la salle, calisthénie, étirements |
+| `bodymap.js` | Silhouette des muscles travaillés |
 | `foods.js` | Aliments de base (valeurs / 100 g) |
 | `sw.js` + `manifest.json` | Mode hors-ligne et installation |
 | `vendor/` | Chart.js (graphiques) et html5-qrcode (scanner) |

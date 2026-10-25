@@ -11,6 +11,8 @@
   --blue: #4da3ff;
   --orange: #ff9f43;
   --red: #ff5c6c;
+  --green: #22c55e;
+  --yellow: #facc15;
   --radius: 14px;
   --nav-h: 64px;
 }
@@ -55,8 +57,8 @@ main { max-width: 640px; margin: 0 auto; padding: 16px; }
   border-top: 1px solid var(--line);
 }
 .tabbar a {
-  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 2px; font-size: 11px; color: var(--muted); text-decoration: none;
+  flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 2px; font-size: 10.5px; color: var(--muted); text-decoration: none;
 }
 .tabbar a span { font-size: 22px; filter: grayscale(1); opacity: 0.7; }
 .tabbar a.active { color: var(--accent); }
@@ -101,8 +103,8 @@ main { max-width: 640px; margin: 0 auto; padding: 16px; }
 }
 .chip.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; }
 .tag { display: inline-block; padding: 3px 9px; border-radius: 999px; font-size: 12px; background: var(--card2); margin: 2px 4px 2px 0; }
-.tag.main { background: var(--accent); color: var(--accent-ink); font-weight: 700; }
-.tag.sec { background: var(--accent-dim); }
+.tag.main { background: var(--green); color: #06210f; font-weight: 700; }
+.tag.sec { background: var(--yellow); color: #2a2100; font-weight: 600; }
 
 label.field { display: block; font-size: 13px; color: var(--muted); }
 label.field > input, label.field > select, label.field > textarea { margin-top: 4px; }
@@ -144,7 +146,11 @@ textarea { min-height: 70px; resize: vertical; }
 .steps { padding-left: 20px; margin: 0; }
 .steps li { margin-bottom: 6px; }
 .bodymap { display: flex; justify-content: center; gap: 18px; }
-.bodymap svg { width: 120px; height: auto; }
+.bodymap { background: radial-gradient(ellipse at center, #232836 0%, transparent 70%); border-radius: 12px; padding: 6px 0; }
+.bodymap figure { flex: 1; max-width: 150px; }
+.bodymap svg { width: 100%; height: auto; display: block; filter: drop-shadow(0 4px 10px rgba(0,0,0,.35)); }
+.body-legend { display: flex; justify-content: center; gap: 16px; font-size: 13px; color: var(--muted); margin-top: 6px; }
+.body-legend i { display: inline-block; width: 11px; height: 11px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
 .bodymap figure { margin: 0; text-align: center; font-size: 12px; color: var(--muted); }
 
 /* ---------- Séance en cours ---------- */
@@ -208,3 +214,25 @@ body.resting { padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) +
   max-width: 90vw; text-align: center;
 }
 [hidden] { display: none !important; }
+
+/* ---------- Agenda ---------- */
+.cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
+.cal-h { text-align: center; font-size: 12px; color: var(--muted); font-weight: 700; padding-bottom: 2px; }
+.cal-day {
+  aspect-ratio: 1; border-radius: 10px; border: 1px solid var(--line); background: var(--card2);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+  font-weight: 700; font-size: 14px; cursor: pointer; padding: 0; color: var(--text);
+}
+.cal-day small { font-size: 9.5px; font-weight: 600; opacity: .85; }
+.cal-day.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.cal-day.today { outline: 2px solid var(--blue); outline-offset: 1px; }
+.cal-day:disabled { opacity: .3; cursor: default; }
+
+/* ---------- Progrès ---------- */
+.prog-card { cursor: pointer; }
+.prog-card .thumb { width: 48px; height: 48px; border-radius: 10px; object-fit: cover; background: #fff; flex: none; }
+.verdict { display: inline-block; margin-top: 4px; font-size: 13px; font-weight: 700; padding: 3px 9px; border-radius: 8px; }
+.verdict.up { background: rgba(34,197,94,.15); color: var(--green); }
+.verdict.down { background: rgba(255,159,67,.15); color: var(--orange); }
+.verdict.same, .verdict.new { background: var(--card2); color: var(--muted); }
+.spark { width: 80px; height: 28px; flex: none; }

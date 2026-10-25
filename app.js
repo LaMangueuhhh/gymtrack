@@ -40,6 +40,8 @@ const DEFAULT_STATE = {
   food: {},
   recentFoods: [],
   activeProgram: null,
+  visits: [],
+  hidden: [],
   settings: { rest: 90 },
 };
 let state = load();
@@ -199,32 +201,6 @@ function lineChart(canvasId, labels, datasets, opts = {}) {
   }));
 }
 
-// Silhouette avec les muscles travaillés en couleur
-function bodyMap(ex) {
-  const main = new Set(ex.muscles), sec = new Set(ex.secondaires);
-  const fill = (m) => (main.has(m) ? "#c6ff3d" : sec.has(m) ? "#6f8f2c" : "#2e3340");
-  const R = (m, x, y, w, h, rx) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${rx}" fill="${fill(m)}"/>`;
-  const pair = (m, x, y, w, h, rx) => R(m, x, y, w, h, rx) + R(m, 100 - x - w, y, w, h, rx);
-  const base = `<circle cx="50" cy="15" r="11" fill="#3a4050"/><rect x="45" y="25" width="10" height="7" fill="#3a4050"/>
-    <rect x="35" y="180" width="12" height="8" rx="3" fill="#3a4050"/><rect x="53" y="180" width="12" height="8" rx="3" fill="#3a4050"/>`;
-  const front = base +
-    `<ellipse cx="29" cy="40" rx="9" ry="7" fill="${fill("epaules")}"/><ellipse cx="71" cy="40" rx="9" ry="7" fill="${fill("epaules")}"/>` +
-    pair("pecs", 33, 35, 16, 17, 5) + pair("biceps", 18, 47, 9, 20, 4) + pair("avant_bras", 15, 69, 8, 24, 4) +
-    R("abdos", 41, 54, 18, 31, 4) + pair("obliques", 33, 55, 7, 28, 3) +
-    `<rect x="34" y="86" width="32" height="11" rx="4" fill="#3a4050"/>` +
-    pair("quadriceps", 34, 98, 14, 44, 6) + pair("mollets", 36, 145, 10, 34, 5);
-  const back = base +
-    `<polygon points="38,29 62,29 67,40 50,54 33,40" fill="${fill("trapezes")}"/>` +
-    `<ellipse cx="29" cy="40" rx="9" ry="7" fill="${fill("epaules_arr")}"/><ellipse cx="71" cy="40" rx="9" ry="7" fill="${fill("epaules_arr")}"/>` +
-    pair("dos", 32, 45, 10, 28, 5) + R("dos_milieu", 43, 46, 14, 18, 3) + R("lombaires", 42, 66, 16, 18, 3) +
-    pair("triceps", 18, 47, 9, 20, 4) + pair("avant_bras", 15, 69, 8, 24, 4) +
-    pair("fessiers", 34, 86, 15, 17, 7) + pair("ischios", 34, 105, 14, 37, 6) + pair("mollets", 35, 145, 12, 34, 6);
-  return `<div class="bodymap">
-    <figure><svg viewBox="0 0 100 190">${front}</svg><figcaption>Face</figcaption></figure>
-    <figure><svg viewBox="0 0 100 190">${back}</svg><figcaption>Dos</figcaption></figure>
-  </div>`;
-}
-
 const muscleTags = (ex) =>
   ex.muscles.map((m) => `<span class="tag main">${MUSCLES[m]}</span>`).join("") +
   ex.secondaires.map((m) => `<span class="tag sec">${MUSCLES[m]}</span>`).join("");
@@ -234,21 +210,22 @@ const muscleTags = (ex) =>
 // ============================================================
 const ROUTES = {
   accueil: viewHome,
-  seances: viewSessions,
+  agenda: viewAgenda,
+  seances: viewAgenda,
   seance: viewSessionDetail,
   live: viewLive,
   exos: viewExercises,
   exo: viewExercise,
-  progres: viewProgress,
+  progres: (id) => (id ? viewProgress(id) : viewProgressList()),
   programmes: viewPrograms,
   programme: viewProgram,
   nutrition: viewNutrition,
   corps: viewBody,
   reglages: viewSettings,
 };
-const TAB_OF = { seance: "seances", live: "seances", progres: "seances", exo: "exos", programmes: "accueil", programme: "accueil", reglages: "" };
-const TOP_LEVEL = ["accueil", "seances", "exos", "nutrition", "corps"];
-let ui = { exGroup: "Tous", exSearch: "", foodDay: dayStr(), bodyMetric: "poids", progMetric: null, progFilter: "tous" };
+const TAB_OF = { seances: "agenda", seance: "agenda", live: "agenda", exo: "exos", programmes: "accueil", programme: "accueil", reglages: "" };
+const TOP_LEVEL = ["accueil", "agenda", "seances", "progres", "exos", "nutrition", "corps"];
+let ui = { exGroup: "Tous", exSearch: "", showHidden: false, foodDay: dayStr(), calMonth: dayStr().slice(0, 7), bodyMetric: "poids", progMetric: null, progFilter: "tous" };
 
 function route() {
   const parts = location.hash.replace(/^#\/?/, "").split("/");
@@ -257,7 +234,7 @@ function route() {
   destroyCharts();
   const tab = TAB_OF[name] ?? name;
   document.querySelectorAll(".tabbar a").forEach((a) => a.classList.toggle("active", a.dataset.tab === tab));
-  $("backBtn").hidden = TOP_LEVEL.includes(name);
+  $("backBtn").hidden = TOP_LEVEL.includes(name) && !(name === "progres" && arg);
   const app = $("app");
   const html = ROUTES[name](arg);
   if (html !== undefined) app.innerHTML = html;
@@ -294,6 +271,7 @@ function viewHome() {
       <a class="btn primary block" href="#/corps">Remplir mon profil</a></div>`;
   }
 
+  html += checkinCard();
   html += `<div class="grid3">
     <div class="stat"><b>${sessionsThisWeek()}</b><span>séances cette semaine</span></div>
     <div class="stat"><b>${Math.round(today.k)}</b><span>kcal ${g ? "/ " + g.kcal : "aujourd'hui"}</span></div>
@@ -357,45 +335,203 @@ function sessionLine(s) {
     </div><span class="arrow">›</span></div>`;
 }
 
-function viewSessions() {
-  setTitle("Séances");
-  const list = [...state.sessions].sort((a, b) => b.date.localeCompare(a.date) || b.start - a.start);
-  let html = state.current
-    ? `<a class="btn primary block" href="#/live">⏱️ Reprendre la séance en cours</a>`
-    : `<div class="grid2"><button class="btn primary" data-act="start-free">＋ Séance libre</button><a class="btn" href="#/programmes">📋 Programmes</a></div>`;
+// ============================================================
+//  AGENDA (présence à la salle + historique des séances)
+// ============================================================
+const nowHM = (d = new Date()) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+const toMin = (hm) => { if (!hm) return null; const [h, m] = String(hm).split(":").map(Number); return isNaN(h) ? null : h * 60 + (m || 0); };
+// Durée en minutes entre arrivée et départ (gère le passage de minuit)
+function visitMinutes(v) {
+  const a = toMin(v.arrivee), b = toMin(v.depart);
+  if (a == null || b == null) return 0;
+  return (b - a + 1440) % 1440;
+}
+const fmtDur = (m) => (m < 60 ? `${m} min` : `${Math.floor(m / 60)}h${pad(m % 60)}`);
+const visitOf = (d) => state.visits.find((v) => v.date === d);
+const dayHasGym = (d) => !!visitOf(d) || state.sessions.some((s) => s.date === d);
 
-  if (!list.length) {
-    return html + `<div class="empty"><span class="big">🏋️</span>Aucune séance enregistrée.<br>Lance ta première séance !</div>`;
+function checkinCard() {
+  const v = visitOf(dayStr());
+  if (v && v.arrivee && !v.depart) {
+    const since = (toMin(nowHM()) - toMin(v.arrivee) + 1440) % 1440;
+    return `<div class="card" style="border-color:var(--accent)"><div class="row">
+      <div class="grow"><b>📍 À la salle depuis ${fmtDur(since)}</b><div class="muted small">Arrivé à ${v.arrivee}</div></div>
+      <button class="btn primary" data-act="checkout">🚪 Je pars</button></div></div>`;
   }
+  if (v && v.depart) {
+    return `<div class="card"><div class="row"><div class="grow"><b>✅ Salle faite aujourd'hui</b>
+      <div class="muted small">${v.arrivee || "?"} → ${v.depart} · ${fmtDur(visitMinutes(v))}</div></div>
+      <button class="btn sm" data-act="day" data-d="${v.date}">Modifier</button></div></div>`;
+  }
+  return `<button class="btn block" data-act="checkin" style="margin-bottom:12px">📍 J'arrive à la salle (${nowHM()})</button>`;
+}
 
-  // Exercices déjà pratiqués → accès à la progression
+function viewAgenda() {
+  setTitle("Agenda");
+  const [y, m] = ui.calMonth.split("-").map(Number);
+  const first = new Date(y, m - 1, 1);
+  const nbDays = new Date(y, m, 0).getDate();
+  const offset = (first.getDay() + 6) % 7; // lundi = 0
+  const monthDays = [...Array(nbDays)].map((_, i) => dayStr(new Date(y, m - 1, i + 1)));
+  const gymDays = monthDays.filter(dayHasGym);
+  const visits = state.visits.filter((v) => v.date.startsWith(ui.calMonth) && v.depart);
+  const total = visits.reduce((a, v) => a + visitMinutes(v), 0);
+  const today = dayStr();
+
+  let html = state.current
+    ? `<a class="btn primary block" href="#/live" style="margin-bottom:12px">⏱️ Reprendre la séance en cours</a>`
+    : `<div class="grid2" style="margin-bottom:12px"><button class="btn primary" data-act="start-free">＋ Séance libre</button><a class="btn" href="#/programmes">📋 Programmes</a></div>`;
+  html += checkinCard();
+
+  html += `<div class="card"><div class="row between" style="margin-bottom:10px">
+      <button class="icon-btn" data-act="cal-month" data-delta="-1">‹</button>
+      <b style="text-transform:capitalize">${first.toLocaleDateString("fr-FR", { month: "long", year: "numeric" })}</b>
+      <button class="icon-btn" data-act="cal-month" data-delta="1">›</button></div>
+    <div class="cal">${["L", "M", "M", "J", "V", "S", "D"].map((d) => `<div class="cal-h">${d}</div>`).join("")}
+      ${'<div></div>'.repeat(offset)}
+      ${monthDays.map((d, i) => {
+        const v = visitOf(d), went = dayHasGym(d), min = v ? visitMinutes(v) : 0;
+        return `<button class="cal-day ${went ? "on" : ""} ${d === today ? "today" : ""}" data-act="day" data-d="${d}" ${d > today ? "disabled" : ""}>
+          <span>${i + 1}</span>${min ? `<small>${fmtDur(min)}</small>` : went ? "<small>✓</small>" : ""}</button>`;
+      }).join("")}
+    </div>
+    <p class="muted small center" style="margin-bottom:0">Touche un jour pour noter ton heure d'arrivée et de départ</p></div>
+    <div class="grid3">
+      <div class="stat"><b>${gymDays.length}</b><span>jours à la salle</span></div>
+      <div class="stat"><b>${total ? fmtDur(total) : "–"}</b><span>temps total</span></div>
+      <div class="stat"><b>${visits.length ? fmtDur(Math.round(total / visits.length)) : "–"}</b><span>durée moyenne</span></div>
+    </div>`;
+
+  const list = state.sessions.filter((s) => s.date.startsWith(ui.calMonth)).sort((a, b) => b.date.localeCompare(a.date) || b.start - a.start);
+  html += `<div class="section-title">Séances du mois</div>` +
+    (list.length ? `<div class="card">${list.map(sessionLine).join("")}</div>` : `<div class="empty">Aucune séance ce mois-ci</div>`);
+  return html;
+}
+
+function dayModal(d) {
+  const v = visitOf(d) || {};
+  const sess = state.sessions.filter((s) => s.date === d);
+  openModal(fmtDay(d, { weekday: "long", day: "numeric", month: "long" }), `<div class="stack">
+    <div class="grid2"><label class="field">Arrivée<input type="time" id="vArr" value="${v.arrivee || ""}"></label>
+      <label class="field">Départ<input type="time" id="vDep" value="${v.depart || ""}"></label></div>
+    <div class="card center" style="margin:0"><div class="muted small">Temps passé à la salle</div><div style="font-size:26px;font-weight:800" id="vDur">–</div></div>
+    <label class="field">Note (optionnel)<input id="vNote" value="${esc(v.note || "")}" placeholder="Ex : salle blindée, cardio seulement…"></label>
+    <button class="btn primary block" data-act="save-visit" data-d="${d}">✅ J'y suis allé</button>
+    ${v.id ? `<button class="btn danger block" data-act="del-visit" data-d="${d}">Je n'y suis pas allé (effacer)</button>` : ""}
+    ${sess.length ? `<div class="section-title" style="margin-top:6px">Séances ce jour-là</div><div class="card" style="margin:0">${sess.map(sessionLine).join("")}</div>` : ""}
+  </div>`);
+  const upd = () => { const m = visitMinutes({ arrivee: $("vArr").value, depart: $("vDep").value }); $("vDur").textContent = m ? fmtDur(m) : "–"; };
+  $("vArr").addEventListener("input", upd); $("vDep").addEventListener("input", upd); upd();
+}
+
+// ============================================================
+//  PROGRÈS (comparaison des performances par exercice)
+// ============================================================
+// Meilleure série d'une séance (la plus lourde, puis le plus de reps)
+function bestSet(type, sets) {
+  const score = (s) => type === "force" ? num(s.kg) * 1000 + num(s.reps)
+    : type === "pdc" ? num(s.kg) * 1000 + num(s.reps) : type === "temps" ? num(s.sec) : num(s.min) * 1000 + num(s.km);
+  return [...sets].sort((a, b) => score(b) - score(a))[0];
+}
+
+// Compare deux passages d'un exercice : plus lourd ? plus de reps ? tenu plus longtemps ?
+function compareRuns(ex, cur, prev) {
+  const c = cur.stats, p = prev.stats, t = ex.type;
+  const up = (txt) => ({ cls: "up", txt }), same = (txt) => ({ cls: "same", txt }), down = (txt) => ({ cls: "down", txt });
+  const repsAtMax = (h) => Math.max(0, ...h.sets.filter((s) => num(s.kg) === h.stats.maxKg).map((s) => num(s.reps)));
+  if (t === "force") {
+    const dKg = r1(c.maxKg - p.maxKg);
+    if (ex.inverse) { // machine d'assistance : moins de kg = plus fort
+      if (dKg < 0) return up(`Moins d'assistance : ${dKg} kg`);
+      if (dKg > 0) return down(`Plus d'assistance : +${dKg} kg`);
+    } else {
+      if (dKg > 0) return up(`Plus lourd : +${dKg} kg`);
+      if (dKg < 0) {
+        if (c.e1rm > p.e1rm) return up(`Moins lourd mais plus de reps (force +${r1(c.e1rm - p.e1rm)} kg)`);
+        const dr = c.volume - p.volume;
+        return dr >= 0 ? same(`Moins lourd (${dKg} kg) mais plus de volume`) : down(`Moins lourd : ${dKg} kg`);
+      }
+    }
+    const dr = repsAtMax(cur) - repsAtMax(prev);
+    if (dr > 0) return up(`Même charge, +${dr} rep${dr > 1 ? "s" : ""}`);
+    if (dr < 0) return down(`Même charge, ${dr} rep${dr < -1 ? "s" : ""}`);
+    const dv = Math.round(c.volume - p.volume);
+    return dv > 0 ? up(`Plus de séries / volume (+${dv} kg)`) : dv < 0 ? down(`Moins de volume (${dv} kg)`) : same("Identique à la dernière fois");
+  }
+  if (t === "pdc") {
+    const dKg = r1(c.maxKg - p.maxKg), dr = c.maxReps - p.maxReps, dt = c.totalReps - p.totalReps;
+    if (dKg > 0) return up(`Plus de lest : +${dKg} kg`);
+    if (dr > 0) return up(`+${dr} rep${dr > 1 ? "s" : ""} sur ta meilleure série`);
+    if (dt > 0) return up(`+${dt} reps au total`);
+    if (dr < 0 || dt < 0 || dKg < 0) return down(`${dr < 0 ? dr : dt} reps`);
+    return same("Identique à la dernière fois");
+  }
+  if (t === "temps") {
+    const d = c.maxSec - p.maxSec;
+    return d > 0 ? up(`Tenu plus longtemps : +${d} s`) : d < 0 ? down(`Moins longtemps : ${d} s`) : same("Même durée");
+  }
+  const vC = c.min ? c.km / c.min : 0, vP = p.min ? p.km / p.min : 0;
+  if (c.km && p.km && vC > vP * 1.01) return up(`Plus rapide : ${r1(vC * 60)} km/h`);
+  const dm = r1(c.min - p.min), dk = r1(c.km - p.km);
+  if (dk > 0) return up(`Plus loin : +${dk} km`);
+  if (dm > 0) return up(`Plus longtemps : +${dm} min`);
+  if (dm < 0 || dk < 0) return down("Moins long que la dernière fois");
+  return same("Identique à la dernière fois");
+}
+
+function sparkline(values) {
+  if (values.length < 2) return "";
+  const w = 80, h = 28, min = Math.min(...values), max = Math.max(...values), span = max - min || 1;
+  const pts = values.map((v, i) => `${(i / (values.length - 1)) * w},${h - 3 - ((v - min) / span) * (h - 6)}`).join(" ");
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}"><polyline points="${pts}" fill="none" stroke="#c6ff3d" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg>`;
+}
+
+function viewProgressList() {
+  setTitle("Progrès");
   const done = {};
-  for (const s of list) for (const e of s.exercises) done[e.exId] = (done[e.exId] || 0) + 1;
-  html += `<div class="section-title">Ma progression</div><div class="card">
-    <div class="chart-box"><canvas id="sessChart"></canvas></div>
-    <p class="muted small center">Volume soulevé (kg) et fatigue ressentie (/10) par séance</p></div>
-    <div class="card"><h2>📈 Progression par exercice</h2>
-    ${Object.keys(done).filter(exById).sort((a, b) => done[b] - done[a]).map((id) => {
-      const ex = exById(id);
-      return `<div class="list-item" data-act="go" data-to="#/progres/${id}"><img class="thumb" src="${imgUrl(ex)}" alt="" loading="lazy">
-        <div class="grow"><b>${esc(ex.nom)}</b><div class="muted small">${done[id]} séance${done[id] > 1 ? "s" : ""}</div></div><span class="arrow">›</span></div>`;
-    }).join("")}</div>`;
-
-  html += `<div class="section-title">Historique</div><div class="card">${list.map(sessionLine).join("")}</div>`;
-
-  after(() => {
-    const last = list.slice(0, 20).reverse();
-    lineChart("sessChart", last.map((s) => fmtShort(s.date)), [
-      { label: "Volume (kg)", data: last.map((s) => Math.round(sessionVolume(s))), type: "bar", backgroundColor: "#c6ff3d88", yAxisID: "y" },
-      { label: "Fatigue", data: last.map((s) => s.fatigue || null), borderColor: "#ff9f43", yAxisID: "y2" },
-    ], { zero: true, y2: true });
+  for (const s of state.sessions) for (const e of s.exercises) if (exById(e.exId)) done[e.exId] = s.date > (done[e.exId] || "") ? s.date : done[e.exId];
+  const ids = Object.keys(done).sort((a, b) => done[b].localeCompare(done[a]));
+  if (!ids.length) {
+    return `<div class="empty"><span class="big">📈</span>Pas encore de données.<br>Note tes séries, tes reps et tes charges pendant tes séances : ici tu verras pour chaque exercice si tu progresses.</div>
+      <button class="btn primary block" data-act="start-free">＋ Lancer une séance</button>`;
+  }
+  const rows = ids.map((id) => {
+    const ex = exById(id), h = exHistory(id), cur = h[h.length - 1], prev = h[h.length - 2];
+    const v = prev ? compareRuns(ex, cur, prev) : { cls: "new", txt: "Première fois : refais-le pour comparer" };
+    const key = METRICS[ex.type][0][0];
+    return { ex, h, cur, prev, v, spark: sparkline(h.slice(-12).map((x) => x.stats[key] || 0)) };
   });
+  const count = (c) => rows.filter((r) => r.v.cls === c).length;
+  let html = `<div class="grid3">
+      <div class="stat"><b style="color:var(--green)">${count("up")}</b><span>en progrès 📈</span></div>
+      <div class="stat"><b>${count("same")}</b><span>stables ➖</span></div>
+      <div class="stat"><b style="color:var(--orange)">${count("down")}</b><span>en baisse 📉</span></div></div>
+    <p class="muted small">Comparaison de ta dernière fois avec la fois d'avant, pour chaque exercice.</p>`;
+  html += rows.map(({ ex, cur, prev, v, spark }) => {
+    const b = bestSet(ex.type, cur.sets), pb = prev && bestSet(ex.type, prev.sets);
+    return `<div class="card prog-card" data-act="go" data-to="#/progres/${ex.id}">
+      <div class="row"><img class="thumb" src="${imgUrl(ex)}" alt="" loading="lazy">
+        <div class="grow"><b>${esc(ex.nom)}</b>
+          <div class="verdict ${v.cls}">${v.cls === "up" ? "▲" : v.cls === "down" ? "▼" : v.cls === "same" ? "＝" : "★"} ${esc(v.txt)}</div></div>
+        ${spark}</div>
+      <div class="small muted" style="margin-top:8px">Dernière (${fmtShort(cur.date)}) : <b style="color:var(--text)">${b ? setText(ex.type, b) : "–"}</b>${pb ? ` · Avant (${fmtShort(prev.date)}) : ${setText(ex.type, pb)}` : ""}</div>
+    </div>`;
+  }).join("");
+
+  const last = [...state.sessions].sort((a, b) => a.date.localeCompare(b.date) || a.start - b.start).slice(-20);
+  html += `<div class="section-title">Toutes les séances</div><div class="card">
+    <div class="chart-box"><canvas id="sessChart"></canvas></div>
+    <p class="muted small center">Volume soulevé (kg) et fatigue ressentie (/10) par séance</p></div>`;
+  after(() => lineChart("sessChart", last.map((s) => fmtShort(s.date)), [
+    { label: "Volume (kg)", data: last.map((s) => Math.round(sessionVolume(s))), type: "bar", backgroundColor: "#c6ff3d88", yAxisID: "y" },
+    { label: "Fatigue", data: last.map((s) => s.fatigue || null), borderColor: "#ff9f43", yAxisID: "y2" },
+  ], { zero: true, y2: true }));
   return html;
 }
 
 function viewSessionDetail(id) {
   const s = state.sessions.find((x) => x.id === id);
-  if (!s) { go("#/seances"); return; }
+  if (!s) { go("#/agenda"); return; }
   setTitle(s.name);
   let html = `<div class="card"><div class="muted">${fmtDay(s.date, { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</div>
     <div class="grid3" style="margin-top:10px">
@@ -433,7 +569,7 @@ function startSession(name, items, extra = {}) {
 
 function viewLive() {
   const c = state.current;
-  if (!c) { go("#/seances"); return; }
+  if (!c) { go("#/agenda"); return; }
   setTitle("Séance en cours");
   let html = `<div class="card"><label class="field">Nom de la séance<input data-in="cur-name" value="${esc(c.name)}"></label>
     <p class="muted small" style="margin:8px 0 0">⏱️ <span id="elapsed">${fmtTime((Date.now() - c.start) / 1000)}</span> · cochez ✓ chaque série pour lancer le chrono de repos</p></div>`;
@@ -504,14 +640,18 @@ function beep() {
   } catch (e) { /* pas de son, tant pis */ }
 }
 
+const EX_FILTERS = ["Tous", "🏢 Machines", ...GROUPES];
+const inGroup = (e, g) => g === "Tous" || (g === "🏢 Machines" ? e.machine : e.groupe === g || (e.aussi || []).includes(g));
+const isHidden = (e) => state.hidden.includes(e.id);
+
 function pickExerciseModal(onPick) {
   const render = (q = "", grp = "Tous") => {
-    const list = EXERCISES.filter((e) => (grp === "Tous" || e.groupe === grp) && e.nom.toLowerCase().includes(q.toLowerCase()));
+    const list = EXERCISES.filter((e) => inGroup(e, grp) && !isHidden(e) && e.nom.toLowerCase().includes(q.toLowerCase()));
     return list.map((e) => `<div class="list-item" data-act="pick" data-id="${e.id}"><img class="thumb" src="${imgUrl(e)}" alt="" loading="lazy">
-      <div class="grow"><b>${esc(e.nom)}</b><div class="muted small">${e.groupe} · ${esc(e.materiel)}</div></div><span class="arrow">＋</span></div>`).join("") || `<div class="empty">Aucun exercice</div>`;
+      <div class="grow"><b>${esc(e.nom)}</b><div class="muted small">${e.groupe} · ${esc(e.marque || e.materiel)}</div></div><span class="arrow">＋</span></div>`).join("") || `<div class="empty">Aucun exercice</div>`;
   };
   openModal("Ajouter un exercice", `<input id="pickQ" placeholder="🔍 Rechercher…" autocomplete="off">
-    <div class="chips" style="margin:10px 0">${["Tous", ...GROUPES].map((g, i) => `<button class="chip ${i ? "" : "on"}" data-act="pick-grp" data-g="${g}">${g}</button>`).join("")}</div>
+    <div class="chips" style="margin:10px 0">${EX_FILTERS.map((g, i) => `<button class="chip ${i ? "" : "on"}" data-act="pick-grp" data-g="${g}">${g}</button>`).join("")}</div>
     <div id="pickList">${render()}</div>`);
   let grp = "Tous";
   const refresh = () => ($("pickList").innerHTML = render($("pickQ").value, grp));
@@ -559,6 +699,7 @@ function saveSession() {
     exercises, fatigue: finishModal.getFatigue(), feel: finishModal.getFeel(), notes: $("notesIn").value.trim(), programId: c.programId || null,
   };
   state.sessions.push(s);
+  if (!visitOf(c.date)) state.visits.push({ id: uid(), date: c.date, arrivee: nowHM(new Date(c.start)), depart: nowHM(), note: "" });
   if (c.programId && state.activeProgram && state.activeProgram.id === c.programId) {
     const p = PROGRAMS.find((x) => x.id === c.programId);
     state.activeProgram.next = (c.dayIdx + 1) % p.seances.length;
@@ -577,12 +718,16 @@ function saveSession() {
 function viewExercises() {
   setTitle("Exercices");
   const q = ui.exSearch.toLowerCase();
-  const list = EXERCISES.filter((e) => (ui.exGroup === "Tous" || e.groupe === ui.exGroup) &&
+  const match = EXERCISES.filter((e) => inGroup(e, ui.exGroup) &&
     (e.nom.toLowerCase().includes(q) || e.muscles.some((m) => MUSCLES[m].toLowerCase().includes(q))));
+  const nbHidden = match.filter(isHidden).length;
+  const list = ui.showHidden ? match : match.filter((e) => !isHidden(e));
   const html = `<input id="exSearch" placeholder="🔍 Exercice ou muscle…" value="${esc(ui.exSearch)}" autocomplete="off">
-    <div class="chips" style="margin:10px 0 14px">${["Tous", ...GROUPES].map((g) => `<button class="chip ${ui.exGroup === g ? "on" : ""}" data-act="ex-grp" data-g="${g}">${g}</button>`).join("")}</div>
+    <div class="chips" style="margin:10px 0 14px">${EX_FILTERS.map((g) => `<button class="chip ${ui.exGroup === g ? "on" : ""}" data-act="ex-grp" data-g="${g}">${g}</button>`).join("")}</div>
+    ${ui.exGroup === "🏢 Machines" ? `<p class="muted small" style="margin-top:0">Machines Technogym / Hammer Strength de type Fitness Park. Une machine n'est pas dans ta salle ? Ouvre-la et touche « Pas dans ma salle ».</p>` : ""}
     <div class="ex-grid" id="exGrid">${list.map((e) => `<div class="ex-card" data-act="go" data-to="#/exo/${e.id}">
-      <img src="${imgUrl(e)}" alt="" loading="lazy"><div>${esc(e.nom)}<small>${e.muscles.map((m) => MUSCLES[m]).join(", ")}</small></div></div>`).join("") || `<div class="empty">Aucun résultat</div>`}</div>`;
+      <img src="${imgUrl(e)}" alt="" loading="lazy" ${isHidden(e) ? 'style="opacity:.35"' : ""}><div>${e.machine ? "🏢 " : ""}${esc(e.nom)}<small>${e.muscles.map((m) => MUSCLES[m]).join(", ")}</small></div></div>`).join("") || `<div class="empty">Aucun résultat</div>`}</div>
+    ${nbHidden ? `<button class="btn block" style="margin-top:12px" data-act="show-hidden">${ui.showHidden ? "Cacher" : "Afficher"} les ${nbHidden} exercice${nbHidden > 1 ? "s" : ""} masqué${nbHidden > 1 ? "s" : ""}</button>` : ""}`;
   after(() => {
     const inp = $("exSearch");
     inp.addEventListener("input", () => { ui.exSearch = inp.value; const pos = inp.selectionStart; route(); const n = $("exSearch"); n.focus(); n.setSelectionRange(pos, pos); });
@@ -595,7 +740,8 @@ function exerciseDetailHtml(ex, withActions = true) {
     <p class="muted small center">Position de départ ⇄ position d'arrivée</p>
     <div class="card"><h2>💪 Muscles travaillés</h2>${bodyMap(ex)}
       <div style="margin-top:10px">${muscleTags(ex)}</div>
-      <p class="muted small">🟩 principal · 🟢 secondaire · Matériel : ${esc(ex.materiel)}</p></div>
+      <p class="muted small" style="margin-bottom:0">🛠 ${esc(ex.materiel)}${ex.marque ? ` · ${esc(ex.marque)}` : ""}</p>
+      ${ex.machine && withActions ? `<button class="btn sm block" style="margin-top:10px" data-act="toggle-hidden" data-id="${ex.id}">${isHidden(ex) ? "✅ En fait, elle est dans ma salle" : "🚫 Pas dans ma salle (masquer)"}</button>` : ""}</div>
     <div class="card"><h2>📋 Exécution</h2><ol class="steps">${ex.etapes.map((s) => `<li>${esc(s)}</li>`).join("")}</ol></div>
     <div class="card"><h2>✅ Conseils</h2><ul class="steps">${ex.conseils.map((s) => `<li>${esc(s)}</li>`).join("")}</ul></div>
     <div class="card"><h2>⚠️ Erreurs à éviter</h2><ul class="steps">${ex.erreurs.map((s) => `<li>${esc(s)}</li>`).join("")}</ul></div>
@@ -622,7 +768,7 @@ function viewExercise(id) {
 
 function viewProgress(id) {
   const ex = exById(id);
-  if (!ex) { go("#/seances"); return; }
+  if (!ex) { go("#/progres"); return; }
   setTitle(ex.nom);
   const hist = exHistory(id);
   const metrics = METRICS[ex.type];
@@ -638,8 +784,9 @@ function viewProgress(id) {
     <div class="card"><div class="chart-box"><canvas id="progChart"></canvas></div>
     <p class="center small ${diff >= 0 ? "" : "muted"}">${hist.length > 1 ? `${diff >= 0 ? "📈 +" : "📉 "}${diff}% depuis ta première séance` : "Refais cet exercice pour voir ta courbe évoluer"}</p></div>
     <div class="section-title">Records</div><div class="grid${metrics.length === 3 ? 3 : 2}">${metrics.map(([k, l]) => `<div class="stat"><b>${r1(best(k))}</b><span>${l}</span></div>`).join("")}</div>
-    <div class="section-title">Historique</div><div class="card">${[...hist].reverse().map((h) => `<div class="list-item" data-act="go" data-to="#/seance/${h.sessionId}">
-      <div class="grow"><b>${fmtDay(h.date)}</b><div class="muted small">${h.sets.map((s) => setText(ex.type, s)).join(" · ")}</div></div></div>`).join("")}</div>
+    <div class="section-title">Historique séance par séance</div><div class="card">${hist.map((h, i) => ({ h, v: i ? compareRuns(ex, h, hist[i - 1]) : null })).reverse().map(({ h, v }) => `<div class="list-item" data-act="go" data-to="#/seance/${h.sessionId}">
+      <div class="grow"><b>${fmtDay(h.date)}</b><div class="muted small">${h.sets.map((s) => setText(ex.type, s)).join(" · ")}</div>
+      ${v ? `<div class="verdict ${v.cls}">${v.cls === "up" ? "▲" : v.cls === "down" ? "▼" : "＝"} ${esc(v.txt)}</div>` : `<div class="verdict new">★ Première fois</div>`}</div></div>`).join("")}</div>
     <a class="btn block" href="#/exo/${id}">📖 Fiche technique</a>`;
   after(() => lineChart("progChart", hist.map((h) => fmtShort(h.date)), [{ label: metrics.find(([k]) => k === metric)[1], data: hist.map((h) => r1(h.stats[metric] || 0)) }]));
   return html;
@@ -650,7 +797,7 @@ function viewProgress(id) {
 // ============================================================
 function viewPrograms() {
   setTitle("Programmes");
-  const filters = [["tous", "Tous"], ["debutant", "Débutant"], ["masse", "Prise de masse"], ["seche", "Sèche"], ["perte", "Perte de poids"], ["force", "Force"]];
+  const filters = [["tous", "Tous"], ["debutant", "Débutant"], ["masse", "Prise de masse"], ["seche", "Sèche"], ["perte", "Perte de poids"], ["force", "Force"], ["calisthenie", "Calisthénie"], ["mobilite", "Étirements"]];
   const list = PROGRAMS.filter((p) => ui.progFilter === "tous" || p.objectif === ui.progFilter);
   return `<div class="chips" style="margin-bottom:12px">${filters.map(([k, l]) => `<button class="chip ${ui.progFilter === k ? "on" : ""}" data-act="prog-filter" data-k="${k}">${l}</button>`).join("")}</div>
     ${list.map((p) => `<div class="card" data-act="go" data-to="#/programme/${p.id}" style="cursor:pointer">
@@ -971,7 +1118,7 @@ const ACTIONS = {
   "start-free": () => startSession("Séance du " + new Date().toLocaleDateString("fr-FR", { weekday: "long" }), []),
   "start-program": (el) => startProgramDay(el.dataset.prog, +el.dataset.day),
   "redo-session": (el) => { const s = state.sessions.find((x) => x.id === el.dataset.id); startSession(s.name, s.exercises.map((e) => ({ exId: e.exId, sets: e.sets.length }))); },
-  "del-session": (el) => { if (!confirm("Supprimer cette séance ?")) return; state.sessions = state.sessions.filter((s) => s.id !== el.dataset.id); save(); go("#/seances"); },
+  "del-session": (el) => { if (!confirm("Supprimer cette séance ?")) return; state.sessions = state.sessions.filter((s) => s.id !== el.dataset.id); save(); go("#/agenda"); },
   "pick-ex": () => pickExerciseModal((id) => { state.current.exercises.push({ exId: id, target: "", rest: state.settings.rest, sets: [newSet(), newSet(), newSet()] }); save(); route(); window.scrollTo(0, document.body.scrollHeight); }),
   "pick-grp": (el) => pickExerciseModal.onGroup(el.dataset.g),
   pick: (el) => pickExerciseModal.onPick(el.dataset.id),
@@ -1009,7 +1156,7 @@ const ACTIONS = {
   "ex-replace": (el) => { const i = +el.dataset.i; pickExerciseModal((id) => { const e = state.current.exercises[i]; e.exId = id; e.sets = e.sets.map(() => newSet()); save(); route(); }); },
   "ex-del": (el) => { state.current.exercises.splice(+el.dataset.i, 1); save(); closeModal(); route(); },
   "ex-info": (el) => { const ex = exById(el.dataset.id); openModal(ex.nom, exerciseDetailHtml(ex, false), () => clearInterval(animInt)); animateExercise(ex); },
-  "cancel-session": () => { if (confirm("Annuler la séance ? Rien ne sera enregistré.")) { state.current = null; stopRest(); save(); go("#/seances"); } },
+  "cancel-session": () => { if (confirm("Annuler la séance ? Rien ne sera enregistré.")) { state.current = null; stopRest(); save(); go("#/agenda"); } },
   "finish-session": finishModal,
   feel: (el) => finishModal.setFeel(+el.dataset.v),
   "save-session": saveSession,
@@ -1022,6 +1169,32 @@ const ACTIONS = {
   "prog-filter": (el) => { ui.progFilter = el.dataset.k; route(); },
   "set-program": (el) => { state.activeProgram = { id: el.dataset.id, next: 0 }; save(); route(); toast("Programme activé ⭐ Retrouve ta prochaine séance sur l'accueil"); },
   "unset-program": () => { state.activeProgram = null; save(); route(); },
+
+  // agenda
+  "cal-month": (el) => { const [y, m] = ui.calMonth.split("-").map(Number); const d = new Date(y, m - 1 + +el.dataset.delta, 1); ui.calMonth = dayStr(d).slice(0, 7); route(); },
+  day: (el) => dayModal(el.dataset.d),
+  checkin: () => {
+    const v = visitOf(dayStr());
+    if (v) { v.arrivee = nowHM(); v.depart = ""; } else state.visits.push({ id: uid(), date: dayStr(), arrivee: nowHM(), depart: "", note: "" });
+    save(); route(); toast("📍 Arrivée notée à " + nowHM() + ". Bonne séance !");
+  },
+  checkout: () => { const v = visitOf(dayStr()); v.depart = nowHM(); save(); route(); toast(`🚪 Tu es resté ${fmtDur(visitMinutes(v))}`); },
+  "save-visit": (el) => {
+    const d = el.dataset.d;
+    let v = visitOf(d);
+    if (!v) { v = { id: uid(), date: d }; state.visits.push(v); }
+    Object.assign(v, { arrivee: $("vArr").value, depart: $("vDep").value, note: $("vNote").value.trim() });
+    save(); closeModal(); route();
+  },
+  "del-visit": (el) => { state.visits = state.visits.filter((v) => v.date !== el.dataset.d); save(); closeModal(); route(); },
+
+  // salle
+  "toggle-hidden": (el) => {
+    const id = el.dataset.id;
+    state.hidden = isHidden({ id }) ? state.hidden.filter((x) => x !== id) : [...state.hidden, id];
+    save(); route(); toast(isHidden({ id }) ? "Machine masquée de ta liste" : "Machine de retour dans ta liste");
+  },
+  "show-hidden": () => { ui.showHidden = !ui.showHidden; route(); },
 
   // nutrition
   "food-day": (el) => { const d = parseDay(ui.foodDay); d.setDate(d.getDate() + +el.dataset.delta); if (dayStr(d) <= dayStr()) { ui.foodDay = dayStr(d); route(); } },
