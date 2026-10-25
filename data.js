@@ -625,7 +625,7 @@ const EXERCISES = [
 
   // ---------- CARDIO ----------
   {
-    id: "course_tapis", nom: "Course sur tapis", groupe: "Cardio", type: "cardio",
+    id: "course_tapis", nom: "Course sur tapis", groupe: "Cardio", type: "tapis",
     img: "Running_Treadmill", materiel: "Tapis de course",
     muscles: ["cardio"], secondaires: ["quadriceps", "mollets"],
     etapes: ["Échauffe-toi 5 min en marche rapide.", "Cours à une allure où tu peux encore parler (zone 2) ou fais du fractionné.", "Termine par 3-5 min de retour au calme."],

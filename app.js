@@ -1,5 +1,5 @@
 // GymTrack — appli de suivi muscu / nutrition / corps.
-const APP_VERSION = "9 · 25/10/2026";
+const APP_VERSION = "10 · 25/10/2026";
 // Tout est stocké en local sur le téléphone (localStorage). Aucun compte, aucun serveur, 100% gratuit.
 
 // ============================================================
@@ -25,6 +25,7 @@ const FIELDS = {
   pdc: [["kg", "lest kg"], ["reps", "reps"]],
   temps: [["sec", "secondes"]],
   cardio: [["min", "min"], ["km", "km"]],
+  tapis: [["min", "min"], ["vit", "km/h"], ["pente", "pente %"]],
 };
 const FEELS = ["😫", "😕", "😐", "🙂", "💪"];
 const MEALS = { pdj: "Petit-déjeuner", dej: "Déjeuner", diner: "Dîner", snack: "Collations" };
@@ -50,6 +51,7 @@ const DEFAULT_STATE = {
   reminders: [],
   myWorkouts: [],
   steps: {},
+  sleep: {},
   settings: { rest: 90, glass: 250, waterGoal: "", health: { on: false }, defiOffset: 0 },
 };
 let state = load();
@@ -125,10 +127,25 @@ function foodTotals(entries) {
   return t;
 }
 
-const isFilled = (type, s) => FIELDS[type].some(([k]) => num(s[k]) > 0);
+const isFilled = (type, s) => (type === "tapis" ? num(s.min) > 0 : FIELDS[type].some(([k]) => num(s[k]) > 0));
+
+// Calories du tapis (équations ACSM) : marche < 7 km/h, course au-delà ; la pente compte beaucoup
+function treadmillKcal(min, vit, pente, kg) {
+  const S = (vit * 1000) / 60, G = pente / 100;
+  const vo2 = vit < 7 ? 3.5 + 0.1 * S + 1.8 * S * G : 3.5 + 0.2 * S + 0.9 * S * G;
+  return ((vo2 * kg) / 1000) * 5 * min;
+}
+// Vitesse d'une série de tapis (anciennes séances : déduite de la distance)
+const tapisVit = (s) => num(s.vit) || (num(s.km) && num(s.min) ? (num(s.km) * 60) / num(s.min) : 0);
+function setKcal(ex, s) {
+  const kg = currentWeight() || 75;
+  if (ex.type === "tapis") return treadmillKcal(num(s.min), tapisVit(s), num(s.pente), kg);
+  if (ex.type === "cardio") return ((ex.met || 7) * kg * num(s.min)) / 60;
+  return 0;
+}
 
 // Statistiques d'un exercice dans une séance
-function exStats(type, sets) {
+function exStats(type, sets, ex) {
   const done = sets.filter((s) => isFilled(type, s));
   const st = { sets: done.length };
   if (type === "force") {
@@ -142,9 +159,16 @@ function exStats(type, sets) {
   } else if (type === "temps") {
     st.maxSec = Math.max(0, ...done.map((s) => num(s.sec)));
     st.totalSec = done.reduce((a, s) => a + num(s.sec), 0);
+  } else if (type === "tapis") {
+    st.min = done.reduce((a, s) => a + num(s.min), 0);
+    st.km = r1(done.reduce((a, s) => a + (num(s.min) * tapisVit(s)) / 60, 0));
+    st.vitMax = Math.max(0, ...done.map(tapisVit));
+    st.penteMax = Math.max(0, ...done.map((s) => num(s.pente)));
+    st.kcal = Math.round(done.reduce((a, s) => a + treadmillKcal(num(s.min), tapisVit(s), num(s.pente), currentWeight() || 75), 0));
   } else {
     st.min = done.reduce((a, s) => a + num(s.min), 0);
     st.km = done.reduce((a, s) => a + num(s.km), 0);
+    st.kcal = Math.round(done.reduce((a, s) => a + setKcal(ex || { type: "cardio" }, s), 0));
   }
   return st;
 }
@@ -152,13 +176,15 @@ const METRICS = {
   force: [["e1rm", "1RM estimé (kg)"], ["maxKg", "Charge max (kg)"], ["volume", "Volume (kg)"]],
   pdc: [["maxReps", "Reps max"], ["totalReps", "Reps totales"], ["maxKg", "Lest max (kg)"]],
   temps: [["maxSec", "Meilleur temps (s)"], ["totalSec", "Temps total (s)"]],
-  cardio: [["min", "Durée (min)"], ["km", "Distance (km)"]],
+  cardio: [["kcal", "Calories (kcal)"], ["min", "Durée (min)"], ["km", "Distance (km)"]],
+  tapis: [["kcal", "Calories (kcal)"], ["km", "Distance (km)"], ["min", "Durée (min)"], ["vitMax", "Vitesse max (km/h)"]],
 };
 
 function setText(type, s) {
   if (type === "force") return `${r1(num(s.kg))} kg × ${num(s.reps)}`;
   if (type === "pdc") return `${num(s.reps)} reps${num(s.kg) ? ` (+${r1(num(s.kg))} kg)` : ""}`;
   if (type === "temps") return `${num(s.sec)} s`;
+  if (type === "tapis") return `${num(s.min)} min · ${r1(tapisVit(s))} km/h${num(s.pente) ? ` · ${num(s.pente)} %` : ""}`;
   return `${num(s.min)} min${num(s.km) ? ` · ${r1(num(s.km))} km` : ""}`;
 }
 
@@ -171,7 +197,7 @@ function exHistory(exId) {
   const ex = exById(exId);
   const out = [];
   for (const s of [...state.sessions].sort((a, b) => a.date.localeCompare(b.date))) {
-    for (const e of s.exercises) if (e.exId === exId) out.push({ date: s.date, sets: e.sets, stats: exStats(ex.type, e.sets), sessionId: s.id });
+    for (const e of s.exercises) if (e.exId === exId) out.push({ date: s.date, sets: e.sets, stats: exStats(ex.type, e.sets, ex), sessionId: s.id });
   }
   return out;
 }
@@ -307,6 +333,7 @@ const ROUTES = {
   sante: viewHealth,
   defi: viewDefi,
   creer: viewBuilder,
+  import: viewImport,
   notifs: viewNotifs,
   rangs: viewRanks,
   progres: (id) => (id ? viewProgress(id) : viewProgressList()),
@@ -316,7 +343,7 @@ const ROUTES = {
   corps: viewBody,
   reglages: viewSettings,
 };
-const TAB_OF = { agenda: "progres", rangs: "progres", seances: "progres", seance: "progres", live: "entrainer", exos: "entrainer", exo: "entrainer", programmes: "entrainer", programme: "entrainer", type: "entrainer", creer: "entrainer", reglages: "", sante: "", notifs: "" };
+const TAB_OF = { agenda: "progres", rangs: "progres", seances: "progres", seance: "progres", live: "entrainer", exos: "entrainer", exo: "entrainer", programmes: "entrainer", programme: "entrainer", type: "entrainer", creer: "entrainer", import: "entrainer", reglages: "", sante: "", notifs: "" };
 const TOP_LEVEL = ["accueil", "entrainer", "exos", "programmes", "defi", "agenda", "rangs", "seances", "progres", "nutrition", "corps"];
 // Onglets internes de « Progrès »
 const progSeg = (k) => `<div class="seg" style="margin-bottom:14px">${[["progres", "Exercices"], ["rangs", "Rangs"], ["agenda", "Agenda"]]
@@ -350,7 +377,8 @@ function updateLiveBar() {
 const setTitle = (t) => { $("title").textContent = t; document.title = `${t} · GymTrack`; };
 const after = (f) => { route.after = f; };
 const go = (h) => { if (location.hash === h) route(); else location.hash = h; };
-window.addEventListener("hashchange", route);
+// Changer de page ferme la fenêtre ouverte (sinon elle reste par-dessus la nouvelle page)
+window.addEventListener("hashchange", () => { if (!$("modal").hidden) closeModal(); route(); });
 
 // ============================================================
 //  ACCUEIL
@@ -371,7 +399,7 @@ function viewHome() {
       <a class="btn primary block" href="#/corps">Remplir mon profil</a></div>`;
   }
 
-  html += checkinCard() + unfilledCard();
+  html += checkinCard() + unfilledCard() + painsCard();
 
   // Séance du jour : prochaine séance du programme actif, sinon une proposition
   const ap = state.activeProgram && PROGRAMS.find((p) => p.id === state.activeProgram.id);
@@ -406,6 +434,7 @@ function viewHome() {
     <div class="progress thin"><div style="width:${(df.done.length / df.items.length) * 100}%"></div></div></div>
     <div class="streak small-streak"><b>${dStreak}</b><span>jour${dStreak > 1 ? "s" : ""}</span></div></a>`;
   html += stepsCard(dayStr());
+  html += sleepCard(dayStr());
   html += waterCard(dayStr());
 
   html += `<a class="card nutri-mini" href="#/nutrition"><div class="row between"><h3>🍽️ Calories</h3><span><b>${Math.round(today.k)}</b> <span class="muted small">${g ? "/ " + g.kcal : ""} kcal</span></span></div>
@@ -638,6 +667,12 @@ function compareRuns(ex, cur, prev) {
     const d = c.maxSec - p.maxSec;
     return d > 0 ? up(`Tenu plus longtemps : +${d} s`) : d < 0 ? down(`Moins longtemps : ${d} s`) : same("Même durée");
   }
+  if (t === "tapis" || t === "cardio") {
+    const dk = Math.round((c.kcal || 0) - (p.kcal || 0));
+    if (t === "tapis" && c.penteMax > p.penteMax && c.min >= p.min) return up(`Plus de pente : ${c.penteMax} % (+${dk} kcal)`);
+    if (dk > 10) return up(`Plus de calories brûlées : +${dk} kcal`);
+    if (dk < -10) return down(`Moins de calories : ${dk} kcal`);
+  }
   const vC = c.min ? c.km / c.min : 0, vP = p.min ? p.km / p.min : 0;
   if (c.km && p.km && vC > vP * 1.01) return up(`Plus rapide : ${r1(vC * 60)} km/h`);
   const dm = r1(c.min - p.min), dk = r1(c.km - p.km);
@@ -721,9 +756,9 @@ function viewSessionDetail(id) {
   let html = `<div class="card"><div class="muted">${fmtDay(s.date, { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</div>
     <div class="grid3" style="margin-top:10px">
       <div class="stat"><b>${s.duration ? Math.round(s.duration / 60) : "–"}</b><span>minutes</span></div>
-      <div class="stat"><b>${Math.round(sessionVolume(s))}</b><span>kg soulevés</span></div>
+      ${sessionCardioKcal(s) && !sessionVolume(s) ? `<div class="stat"><b>${sessionCardioKcal(s)}</b><span>kcal cardio 🔥</span></div>` : `<div class="stat"><b>${Math.round(sessionVolume(s))}</b><span>kg soulevés${sessionCardioKcal(s) ? ` · 🔥 ${sessionCardioKcal(s)} kcal cardio` : ""}</span></div>`}
       <div class="stat"><b>${s.fatigue || "–"}${s.feel ? " " + FEELS[s.feel - 1] : ""}</b><span>fatigue /10</span></div>
-    </div>${s.notes ? `<p style="white-space:pre-wrap">📝 ${esc(s.notes)}</p>` : ""}</div>`;
+    </div>${s.pains && Object.keys(s.pains).length ? `<p class="small">🩹 Douleurs : ${Object.entries(s.pains).map(([j, l]) => `<b>${JOINTS[j]?.nom || j}</b> (${PAIN_LEVELS[l]})`).join(", ")}</p>` : ""}${s.notes ? `<p style="white-space:pre-wrap">📝 ${esc(s.notes)}</p>` : ""}</div>`;
   for (const e of s.exercises) {
     const ex = exById(e.exId);
     if (!ex) continue;
@@ -732,7 +767,8 @@ function viewSessionDetail(id) {
       <div class="grow"><b>${esc(ex.nom)}</b></div><span class="arrow">📈</span></div>
       <ol class="steps" style="margin-top:8px">${e.sets.map((x) => `<li>${setText(ex.type, x)}</li>`).join("")}</ol></div>`;
   }
-  html += `<div class="grid2"><button class="btn" data-act="redo-session" data-id="${s.id}">🔁 Refaire</button>
+  html += `<button class="btn block" style="margin-bottom:10px" data-act="share-s" data-id="${s.id}">📤 Partager cette séance à un ami</button>
+    <div class="grid2"><button class="btn" data-act="redo-session" data-id="${s.id}">🔁 Refaire</button>
     <button class="btn danger" data-act="del-session" data-id="${s.id}">🗑 Supprimer</button></div>`;
   return html;
 }
@@ -740,7 +776,7 @@ function viewSessionDetail(id) {
 // ============================================================
 //  SÉANCE EN COURS
 // ============================================================
-function newSet(prev) { return { kg: prev?.kg ?? "", reps: prev?.reps ?? "", sec: prev?.sec ?? "", min: prev?.min ?? "", km: prev?.km ?? "", done: false }; }
+function newSet(prev) { return { kg: prev?.kg ?? "", reps: prev?.reps ?? "", sec: prev?.sec ?? "", min: prev?.min ?? "", km: prev?.km ?? "", vit: prev?.vit ?? "", pente: prev?.pente ?? "", done: false }; }
 
 // Séance « cardio » ou « étirements » : pas d'échauffement ni de marche inclinée ajoutés
 const isCardioLike = (ex) => ex.groupe === "Cardio" || ex.groupe === "Étirements" || ex.muscles.includes("cardio");
@@ -753,9 +789,14 @@ function sessionKind(items, cat) {
 function addWarmupCooldown(items, cat) {
   if (sessionKind(items, cat) === "cardio") return items;
   const out = [...items];
-  if (state.settings.warmup !== false) out.unshift(...WARMUP.map(([exId, sets, target]) => ({ exId, sets, target, rest: 0, role: "warmup" })));
+  // Échauffement ciblé si une douleur a été signalée récemment (toujours ajouté, même si l'échauffement est désactivé)
+  const rp = recentPains(), extra = [];
+  if (rp) for (const [j] of rp.list) for (const id of JOINTS[j].warm) if (!extra.includes(id) && !(state.settings.warmup !== false && WARMUP.some(([w]) => w === id))) extra.push(id);
+  const painWarm = extra.map((exId) => ({ exId, sets: 1, target: "30 s", rest: 0, role: "warmup" }));
+  if (state.settings.warmup !== false) out.unshift(...WARMUP.map(([exId, sets, target]) => ({ exId, sets, target, rest: 0, role: "warmup" })), ...painWarm);
+  else out.unshift(...painWarm);
   const last = items[items.length - 1];
-  const endsWithCardio = last && exById(last.exId).type === "cardio";
+  const endsWithCardio = last && ["cardio", "tapis"].includes(exById(last.exId).type);
   if (state.settings.walk !== false && !endsWithCardio) {
     const w = state.settings.walkMin || 12;
     out.push({ exId: "marche_inclinee", sets: 1, target: `${w} min · pente 10 % · 5 km/h`, rest: 0, role: "cooldown" });
@@ -765,7 +806,11 @@ function addWarmupCooldown(items, cat) {
 // Valeurs déjà remplies pour l'échauffement et la marche (il suffit de cocher ✓)
 function presetSet(it) {
   const ex = exById(it.exId), t = String(it.target || "");
-  if (it.role === "cooldown") return { ...newSet(), min: String(state.settings.walkMin || 12) };
+  if (it.role === "cooldown") return { ...newSet(), min: String(state.settings.walkMin || 12), vit: "5", pente: "10" };
+  if (ex.type === "tapis") { // ex : « 30 min · 4,8 km/h · 12 % »
+    const m = t.match(/(\d+)\s*min/), v = t.match(/([\d,.]+)\s*km\/h/), g = t.match(/([\d,.]+)\s*%/);
+    return { ...newSet(), min: m ? m[1] : "", vit: v ? v[1].replace(",", ".") : "", pente: g ? g[1].replace(",", ".") : "" };
+  }
   if (it.role !== "warmup") return newSet();
   if (ex.type === "temps") return { ...newSet(), sec: (t.match(/(\d+)\s*s\b/) || [0, "30"])[1] };
   return { ...newSet(), reps: (t.match(/\d+/) || ["5"])[0] };
@@ -793,6 +838,7 @@ function viewLive() {
         <div class="muted small">${done}/${total} séries validées</div></div>
       <button class="btn primary" data-act="finish-session">Terminer</button></div>
     <input class="live-name" data-in="cur-name" value="${esc(c.name)}" aria-label="Nom de la séance">
+    ${recentPains() ? `<div class="pain-banner">🩹 Douleur récente : ${recentPains().list.map(([j, l]) => `${JOINTS[j].nom.toLowerCase()} (${PAIN_LEVELS[l]})`).join(", ")}. Échauffement ciblé ajouté, exos à risque marqués ⚠️ → remplace-les avec ⇄ ou vas-y léger.</div>` : ""}
     ${c.exercises.length ? `<p class="muted small" style="margin:0 2px 10px">Remplis kg et reps puis touche ✓ : le chrono de repos se lance tout seul. Les chiffres en gris = ta dernière fois.</p>` : ""}`;
 
   c.exercises.forEach((e, i) => {
@@ -807,7 +853,7 @@ function viewLive() {
     html += `<div class="card ex-live ${e.role ? "phase-" + e.role : ""} ${nDone === e.sets.length ? "all-done" : ""}">
       <div class="row">
         <img src="${imgUrl(ex)}" alt="" data-act="ex-info" data-id="${ex.id}" style="width:52px;height:52px;border-radius:10px;object-fit:cover;background:#fff;cursor:pointer">
-        <div class="grow"><b>${esc(ex.nom)}</b> <span class="muted small">${nDone}/${e.sets.length}</span>
+        <div class="grow"><b>${esc(ex.nom)}</b> <span class="muted small">${nDone}/${e.sets.length}</span> ${e.role ? "" : painBadge(ex.id)}
           ${e.target ? `<div class="small" style="color:var(--accent)">Objectif : ${esc(e.target)}${e.rest ? ` · repos ${fmtTime(e.rest)}` : ""}</div>` : ""}
           ${prev ? `<div class="prev">Dernière fois : ${prev.sets.filter((s) => isFilled(ex.type, s)).map((s) => setText(ex.type, s)).join(" · ")}</div>` : ""}
         </div>
@@ -821,6 +867,7 @@ function viewLive() {
           ${fields.map(([k]) => `<td><input inputmode="decimal" enterkeyhint="next" autocomplete="off" data-in="set" data-i="${i}" data-j="${j}" data-k="${k}" value="${esc(s[k])}" placeholder="${ps && num(ps[k]) ? esc(ps[k]) : "–"}"></td>`).join("")}
           <td><button class="check" data-act="set-done" data-i="${i}" data-j="${j}">✓</button></td></tr>`;
       }).join("")}</table>
+      ${["cardio", "tapis"].includes(ex.type) ? `<div class="cardio-kcal" id="kc${i}">${cardioLine(ex, e.sets)}</div>` : ""}
       ${e.role ? "" : `<div class="row" style="margin-top:8px"><button class="btn sm grow" data-act="add-set" data-i="${i}">＋ Série</button>
       ${e.sets.length > 1 ? `<button class="btn sm" data-act="del-set" data-i="${i}">− Série</button>` : ""}</div>`}
     </div>`;
@@ -832,6 +879,14 @@ function viewLive() {
     <button class="btn primary" data-act="finish-session">✔ Terminer</button></div>`;
   return html;
 }
+
+// Résumé calories / distance d'un exercice cardio pendant la séance
+function cardioLine(ex, sets) {
+  const valid = sets.filter((s) => isFilled(ex.type, s)), st = exStats(ex.type, valid, ex);
+  if (!valid.length) return ex.type === "tapis" ? "Indique la durée, la vitesse et la pente : les calories se calculent toutes seules." : "Indique la durée : les calories se calculent toutes seules.";
+  return `🔥 ≈ <b>${st.kcal} kcal</b>${st.km ? ` · ${String(st.km).replace(".", ",")} km` : ""}${ex.type === "tapis" && st.penteMax ? ` · pente ${st.penteMax} %` : ""}`;
+}
+const sessionCardioKcal = (s) => s.exercises.reduce((a, e) => { const ex = exById(e.exId); return a + (ex && ["cardio", "tapis"].includes(ex.type) ? exStats(ex.type, e.sets, ex).kcal || 0 : 0); }, 0);
 
 // Chrono de la séance
 setInterval(() => {
@@ -903,8 +958,10 @@ function finishModal() {
     <div class="row between small muted"><span>Facile</span><span>Épuisé</span></div>
     <div class="field">Comment tu te sens ?</div>
     <div class="feel-row">${FEELS.map((f, i) => `<button data-act="feel" data-v="${i + 1}" class="${i === 3 ? "on" : ""}">${f}</button>`).join("")}</div>
-    <label class="field">Notes (sommeil, douleurs, sensations…)<textarea id="notesIn" placeholder="Ex : bien dormi, bonnes sensations au développé"></textarea></label>
+    ${painPickerHtml()}
+    <label class="field">Notes (sensations, ce qui a bien marché…)<textarea id="notesIn" placeholder="Ex : bonnes sensations au développé, un peu mal au coude sur les dips"></textarea></label>
     <button class="btn primary block" data-act="save-session">Enregistrer la séance</button></div>`);
+  finishModal.pains = {};
   $("fatIn").addEventListener("input", (e) => { fatigue = +e.target.value; $("fatV").textContent = fatigue; });
   finishModal.getFeel = () => feel;
   finishModal.setFeel = (v) => { feel = v; document.querySelectorAll("[data-act=feel]").forEach((b) => b.classList.toggle("on", +b.dataset.v === v)); };
@@ -929,7 +986,7 @@ function saveSession() {
   const rankBefore = Object.fromEntries(exercises.map((e) => [e.exId, rankInfo(exById(e.exId))?.i ?? -1]));
   const s = {
     id: c.id, name: c.name || "Séance", date: c.date, start: c.start, duration: Math.round((Date.now() - c.start) / 1000),
-    exercises, fatigue: finishModal.getFatigue(), feel: finishModal.getFeel(), notes: $("notesIn").value.trim(), programId: c.programId || null,
+    exercises, fatigue: finishModal.getFatigue(), feel: finishModal.getFeel(), notes: $("notesIn").value.trim(), programId: c.programId || null, pains: { ...finishModal.pains },
   };
   state.sessions.push(s);
   const rankUps = exercises.map((e) => { const ex = exById(e.exId), ri = rankInfo(ex); return ri && ri.i > rankBefore[e.exId] && ri.i > 0 ? `${ex.nom} → ${RANKS[ri.i].nom}` : null; }).filter(Boolean);
@@ -1108,7 +1165,8 @@ function viewTrain(tab) {
   const t = ui.trainTab;
   let html = state.current
     ? `<a class="btn primary block big" href="#/live">⏱️ Reprendre la séance en cours</a>`
-    : `<div class="grid2"><a class="btn primary big" href="#/creer">✏️ Créer ma séance</a><button class="btn big" data-act="start-free">＋ Séance libre</button></div>`;
+    : `<div class="grid2"><a class="btn primary big" href="#/creer">✏️ Créer ma séance</a><button class="btn big" data-act="start-free">＋ Séance libre</button></div>
+       <button class="btn sm block" style="margin-top:8px" data-act="import-open">📥 Importer une séance d'un ami (QR / lien)</button>`;
   html += `<div class="seg" style="margin:14px 0">${[["seances", "Séances prêtes"], ["programmes", "Programmes"], ["exos", "Exercices"]]
     .map(([k, l]) => `<button class="${t === k ? "on" : ""}" data-act="go" data-to="#/entrainer/${k}">${l}</button>`).join("")}</div>`;
   if (t === "programmes") html += viewPrograms();
@@ -1136,6 +1194,7 @@ function viewWorkout(id) {
         <div class="stat"><b>${w.ex.length}</b><span>exercices</span></div>
         <div class="stat"><b style="font-size:16px;padding:5px 0">${levelDots(w.niveau)}</b><span>${LEVELS[w.niveau]}</span></div></div>
       <button class="btn primary block big" style="margin-top:12px" data-act="start-workout" data-id="${w.id}">▶ Commencer</button>
+      <button class="btn sm block" style="margin-top:8px" data-act="share-w" data-id="${w.id}">📤 Partager à un ami</button>
       ${w.mine ? `<div class="grid2" style="margin-top:8px"><button class="btn sm" data-act="my-edit" data-id="${w.id}">✏️ Modifier</button><button class="btn sm danger" data-act="my-del" data-id="${w.id}">🗑 Supprimer</button></div>` : ""}</div>
     <div class="card"><h2>Muscles travaillés</h2>${bodyMap(fake)}</div>
     <div class="card list-card">${w.ex.map(([exId, sets, reps, restS]) => { const ex = exById(exId); return `<div class="list-item" data-act="ex-info" data-id="${exId}">
@@ -1539,6 +1598,8 @@ function viewSettings() {
       <label class="switch-row"><span><b>🚶 Marche inclinée à la fin</b><br><span class="muted small">Ajoutée à chaque séance de muscu (sauf cardio)</span></span>
         <input type="checkbox" class="switch" data-in="setting-bool" data-k="walk" ${state.settings.walk !== false ? "checked" : ""}></label>
       <label class="field" style="padding:10px 0">Durée de la marche (minutes)<input data-in="setting" data-k="walkMin" inputmode="numeric" value="${esc(state.settings.walkMin || 12)}"></label></div>
+    <div class="card stack"><h2>🌙 Sommeil</h2>
+      <label class="field">Objectif de sommeil (heures)<input data-in="setting" data-k="sleepGoal" inputmode="decimal" value="${esc(state.settings.sleepGoal || "")}" placeholder="8"></label></div>
     <div class="card stack"><h2>🚶 Pas</h2>
       <div class="grid2"><label class="field">Objectif de pas / jour<input data-in="setting" data-k="stepGoal" inputmode="numeric" value="${esc(state.settings.stepGoal || "")}" placeholder="10000"></label>
       <label class="field">Pas déjà inclus dans ton activité<input data-in="setting" data-k="stepBase" inputmode="numeric" value="${esc(state.settings.stepBase ?? "")}" placeholder="5000"></label></div>
@@ -1690,6 +1751,44 @@ const ACTIONS = {
   "body-zoom": (el) => { bodyZoom.ex = BODY_REG[+el.dataset.i]; bodyZoom.view = "front"; bodyZoom.all = false; bodyZoom(); },
   "body-view": (el) => { bodyZoom.view = el.dataset.v; bodyZoom(); },
   "body-all": () => { bodyZoom.all = !bodyZoom.all; bodyZoom(); },
+
+  // partage
+  "share-w": (el) => shareModal(allWorkouts().find((x) => x.id === el.dataset.id)),
+  "share-s": (el) => {
+    const s = state.sessions.find((x) => x.id === el.dataset.id);
+    const ex = s.exercises.filter((e) => !e.role).map((e) => { const x = exById(e.exId), b = bestSet(x.type, e.sets) || {}; return [e.exId, e.sets.length, x.type === "force" || x.type === "pdc" ? String(num(b.reps) || 10) : x.type === "temps" ? `${num(b.sec)} s` : `${num(b.min)} min`, 90]; });
+    shareModal({ nom: s.name, ex });
+  },
+  "share-link": () => shareLink(),
+  "share-copy": () => copyText(shareModal.data.code, "📋 Code copié"),
+  "import-open": () => importModal(),
+  "import-go": () => openImport($("importIn").value),
+  "import-save": () => {
+    const w = viewImport.w;
+    state.myWorkouts.unshift({ id: "my_" + uid(), mine: true, nom: w.nom, cat: "Mes séances", niveau: 2, desc: "Séance partagée par un ami.", ex: w.ex });
+    save(); ui.wCat = "Mes séances"; go("#/entrainer/seances"); toast("💾 Ajoutée à « Mes séances »");
+  },
+  "import-start": () => { const w = viewImport.w; startSession(w.nom, w.ex.map(([exId, sets, reps, restS]) => ({ exId, sets, target: `${sets} × ${reps}`, rest: restS }))); },
+
+  // douleurs
+  "pain-tap": (el) => {
+    const j = el.dataset.j, p = finishModal.pains, l = ((p[j] || 0) + 1) % 3;
+    if (l) p[j] = l; else delete p[j];
+    el.className = l === 2 ? "strong" : l === 1 ? "light" : "";
+    el.dataset.l = l;
+  },
+  "pain-clear": (el) => { state.painsCleared = el.dataset.id; save(); route(); toast("Tant mieux 💪"); },
+
+  // sommeil
+  "sleep-edit": (el) => sleepModal(el.dataset.d),
+  "sleep-q": (el) => { sleepModal.q = +el.dataset.v; document.querySelectorAll("[data-act=sleep-q]").forEach((b) => b.classList.toggle("on", +b.dataset.v === sleepModal.q)); },
+  "sleep-save": (el) => {
+    const d = el.dataset.d, n = { bed: $("slBed").value, wake: $("slWake").value, q: sleepModal.q || 0 };
+    if (!sleepMinutes(n)) return toast("Indique l'heure de coucher et de réveil");
+    state.sleep[d] = n; save(); closeModal(); route();
+    toast(`🌙 ${fmtSleep(sleepMinutes(n))} de sommeil${sleepMinutes(n) >= sleepGoal() * 60 ? " · objectif atteint 😴" : ""}`);
+  },
+  "sleep-del": (el) => { delete state.sleep[el.dataset.d]; save(); closeModal(); route(); },
 
   // pas
   "steps-edit": (el) => stepsModal(el.dataset.d),
@@ -1890,7 +1989,12 @@ document.addEventListener("click", (e) => {
 document.addEventListener("input", (e) => {
   const el = e.target;
   switch (el.dataset.in) {
-    case "set": { const s = state.current.exercises[+el.dataset.i].sets[+el.dataset.j]; s[el.dataset.k] = el.value; save(); break; }
+    case "set": {
+      const e = state.current.exercises[+el.dataset.i], s = e.sets[+el.dataset.j];
+      s[el.dataset.k] = el.value; save();
+      const kc = $("kc" + el.dataset.i); if (kc) kc.innerHTML = cardioLine(exById(e.exId), e.sets);
+      break;
+    }
     case "cur-name": state.current.name = el.value; save(); break;
     case "profile": state.profile[el.dataset.k] = el.value; save(); break;
     case "rest": state.settings.rest = num(el.value) || 90; save(); break;

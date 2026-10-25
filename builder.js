@@ -17,7 +17,7 @@ function familyCount() {
 }
 // Séries / reps proposées par défaut selon le type d'exercice
 function defaultScheme(ex) {
-  if (ex.type === "cardio") return { sets: 1, reps: "10 min", rest: 0 };
+  if (ex.type === "cardio" || ex.type === "tapis") return { sets: 1, reps: "10 min", rest: 0 };
   if (ex.type === "temps") return { sets: 3, reps: "30 s", rest: 45 };
   if (ex.type === "pdc") return { sets: 3, reps: "max", rest: 90 };
   const big = familiesOf(ex.id).some((f) => ["Poussée horizontale", "Poussée inclinée", "Tirage vertical", "Tirage horizontal", "Squat", "Charnière de hanche", "Fente", "Développé épaules"].includes(f));
@@ -88,7 +88,7 @@ function viewBuilder() {
           <img class="thumb" src="${imgUrl(e)}" alt="" loading="lazy">
           <div class="grow"><b>${esc(e.nom)}</b>
             <div class="small">${e.muscles.filter((m) => m !== "cardio").map((m) => `<span class="mini-tag main">${MUSCLES[m]}</span>`).join("")}${e.secondaires.slice(0, 2).map((m) => `<span class="mini-tag sec">${MUSCLES[m]}</span>`).join("")}</div>
-            <div class="small"><span class="eq ${t.cls}">${esc(t.txt)}</span>${same ? ` <span style="color:var(--orange)">· même mouvement qu'un exo déjà pris</span>` : ""}</div></div>
+            <div class="small"><span class="eq ${t.cls}">${esc(t.txt)}</span> ${painBadge(e.id)}${same ? ` <span style="color:var(--orange)">· même mouvement qu'un exo déjà pris</span>` : ""}</div></div>
           <span class="b-add">＋</span></div>`;
       }).join("")}</div>`;
   }

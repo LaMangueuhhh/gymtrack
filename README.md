@@ -11,11 +11,15 @@ Toutes les données restent **sur ton téléphone** (aucun compte, aucun serveur
 - **Ressenti** : fatigue /10, humeur et notes à la fin de chaque séance.
 - **Progrès** : pour chaque exercice, comparaison avec la fois d'avant (plus lourd, plus de reps, tenu plus longtemps…) + courbes (1RM estimé, charge max, volume).
 - **Agenda** : calendrier des jours à la salle, heure d'arrivée / départ et temps passé (bouton « J'arrive » / « Je pars »).
-- **Exercices** : ~100 exercices en français avec images du mouvement, silhouette des muscles (vert = principal, jaune = secondaire), étapes, conseils et erreurs à éviter.
+- **Exercices** : ~100 exercices en français avec images du mouvement, schéma des muscles (rouge = principal, rose = secondaire), étapes, conseils et erreurs à éviter.
   Machines Technogym / Hammer Strength (type Fitness Park), calisthénie et étirements. Une machine absente de ta salle peut être masquée.
 - **Agenda salle / repos 😴 / flemme 🖕** : chaque jour se justifie, les jours oubliés sont signalés, rappel quotidien à 21h30.
 - **Créer ma séance** : choisis les groupes, l'appli propose les exos par mouvement et évite les doublons (max 2 par mouvement), avec les muscles couverts.
 - **Photo de repas analysée par IA** (Gemini, clé gratuite) : aliments, quantités et calories estimés, modifiables avant ajout.
+- **Sommeil** : heure de coucher / réveil, durée, qualité, moyenne de la semaine.
+- **Tapis** : durée, vitesse et pente → distance et calories (équations ACSM) ; calories estimées pour les autres cardios ; séances cardio (12-3-30, fractionné…).
+- **Douleurs** : à la fin de chaque séance ; la séance suivante ajoute un échauffement ciblé et signale les exos qui sollicitent la zone.
+- **Partage de séances** : QR code, lien ou code à coller, sans compte.
 - **Compteur de pas** : saisie ou import depuis Apple Santé (raccourci + presse-papiers), km et calories brûlées ; les pas au-delà de ton activité habituelle s'ajoutent à ton objectif calorique.
 - **Calories adaptatives** : budget calculé sur la semaine ; si tu manges plus un jour, l'objectif des jours suivants baisse (et inversement), sans descendre sous un minimum sain.
 - **Notifications de motivation** : rappels programmables (motivation, séance, eau, défi, pesée, message perso) + guide Raccourcis pour les recevoir appli fermée sur iPhone.
@@ -62,6 +66,9 @@ python3 -m http.server 8000
 | `notifs.js` + `motivation.txt` | Rappels et phrases de motivation |
 | `defi.js` | Défi quotidien |
 | `ranks.js` | Rangs et standards de force |
+| `sleep.js` | Sommeil |
+| `pains.js` | Douleurs et conseils |
+| `share.js` + `vendor/qrcode.js` | Partage de séances |
 | `steps.js` | Compteur de pas |
 | `builder.js` | Créateur de séance |
 | `food-ai.js` | Analyse de photo de repas |

@@ -406,7 +406,7 @@ EXERCISES.push(
     conseils: ["Échauffement complet : ischios, épaules, gainage."], erreurs: ["Plier fort les genoux."],
   },
   {
-    id: "marche_inclinee", nom: "Marche inclinée", groupe: "Cardio", type: "cardio", role: "cooldown", machine: true, marque: "Tapis Technogym",
+    id: "marche_inclinee", nom: "Marche inclinée", groupe: "Cardio", type: "tapis", machine: true, marque: "Tapis Technogym",
     img: "Walking_Treadmill", materiel: "Tapis de course", muscles: ["cardio", "fessiers"], secondaires: ["mollets", "ischios"],
     etapes: ["Règle l'inclinaison entre 8 et 12 %.", "Marche à 4,5 – 5,5 km/h sans te tenir aux barres.", "Garde le buste droit et fais de grands pas."],
     conseils: ["Brûle beaucoup de calories sans fatiguer les jambes pour la prochaine séance.", "Parfait en fin de séance : on reste en « zone 2 » (tu peux parler)."],
@@ -461,4 +461,32 @@ WORKOUTS.unshift(
     ex: [["cr_releve_genoux", 4, "12", 45], ["crunch", 3, "20", 30], ["russian_twist", 3, "24", 30], ["c_flutter", 3, "30 s", 30], ["gainage", 3, "45 s", 30]] },
   { id: "w_maison_jambes", nom: "Maison – Jambes", cat: "Maison", niveau: 2, desc: "Cuisses et fessiers sans aucune charge.",
     ex: [["c_squat_pdc", 4, "25", 60], ["c_fentes_marchees", 4, "12/jambe", 60], ["c_pistol", 3, "5/jambe", 90], ["c_pont", 4, "20", 45], ["mountain_climbers", 3, "30 s", 30]] },
+);
+
+// Intensité (MET) des autres cardios, pour estimer les calories
+for (const [id, met] of Object.entries({ velo: 7, rameur: 7, elliptique: 5, corde: 11, m_escalier: 9 })) {
+  const ex = EXERCISES.find((e) => e.id === id); if (ex) ex.met = met;
+}
+// Séances cardio en plus
+WORKOUTS.push(
+  { id: "w_12330", nom: "Tapis 12-3-30", cat: "Cardio / HIIT", niveau: 2, desc: "La séance virale : 30 min de marche à 12 % de pente et ~4,8 km/h. Brûle beaucoup sans courir.",
+    ex: [["marche_inclinee", 1, "30 min · 4,8 km/h · 12 %", 0]] },
+  { id: "w_tapis_fractionne", nom: "Fractionné sur tapis", cat: "Cardio / HIIT", niveau: 3, desc: "Échauffe-toi 5 min, puis alterne 1 min vite (12-14 km/h) / 1 min marche, 8 fois, puis retour au calme.",
+    ex: [["marche_inclinee", 1, "5 min · 5 km/h · 3 %", 0], ["course_tapis", 1, "16 min · alterner 13 / 5 km/h", 0], ["marche_inclinee", 1, "5 min · 5 km/h · 5 %", 0]] },
+  { id: "w_cardio_mix", nom: "Cardio mix 45 min", cat: "Cardio / HIIT", niveau: 2, desc: "3 machines, 15 min chacune, à allure régulière (tu peux parler).",
+    ex: [["velo", 1, "15 min", 60], ["rameur", 1, "15 min", 60], ["marche_inclinee", 1, "15 min · 5 km/h · 10 %", 0]] },
+);
+
+// Échauffements ciblés (ajoutés automatiquement après une douleur signalée)
+EXERCISES.push(
+  ...[
+    ["e_epaules", "Rotations des épaules", "Shoulder_Circles", ["epaules"], ["trapezes"], ["Bras le long du corps.", "Fais de grands cercles avec les épaules vers l'arrière, puis vers l'avant."]],
+    ["e_coudes", "Rotations des coudes", "Elbow_Circles", ["avant_bras"], ["biceps", "triceps"], ["Bras tendus devant toi.", "Fais tourner les avant-bras autour des coudes, dans un sens puis dans l'autre."]],
+    ["e_poignets", "Rotations des poignets", "Wrist_Circles", ["avant_bras"], [], ["Mains jointes ou poings fermés.", "Fais tourner les poignets lentement dans les deux sens."]],
+    ["e_genoux", "Rotations des genoux", "Knee_Circles", ["quadriceps"], ["ischios"], ["Pieds joints, mains sur les genoux légèrement fléchis.", "Fais de petits cercles avec les genoux, dans les deux sens."]],
+    ["e_chevilles", "Rotations des chevilles", "Ankle_Circles", ["mollets"], [], ["Sur un pied (ou assis), pointe de pied décollée.", "Dessine des cercles avec la cheville, dans les deux sens, puis change de pied."]],
+  ].map(([id, nom, img, muscles, secondaires, etapes]) => ({
+    id, nom, img, muscles, secondaires, etapes, groupe: "Étirements", type: "temps", role: "warmup", materiel: "Aucun",
+    conseils: ["Lent et contrôlé : on réveille l'articulation sans forcer."], erreurs: ["Forcer dans la douleur."],
+  })),
 );
