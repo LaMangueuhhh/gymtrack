@@ -1,10 +1,10 @@
 // Service worker : permet à l'appli de marcher hors-ligne.
-const VERSION = "gymtrack-v2";
+const VERSION = "gymtrack-v3";
 const SHELL = ["./", "index.html", "style.css", "app.js", "data.js", "data-extra.js", "bodymap.js", "foods.js", "manifest.json",
   "vendor/chart.umd.js", "vendor/html5-qrcode.min.js", "icons/icon-192.png", "icons/icon-512.png"];
 
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL.map((u) => new Request(u, { cache: "reload" })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener("activate", (e) => {
@@ -23,9 +23,10 @@ self.addEventListener("fetch", (e) => {
       fetch(e.request).then((res) => { if (res.ok) c.put(e.request, res.clone()); return res; }))));
     return;
   }
-  // Fichiers de l'appli : réseau d'abord (pour avoir les mises à jour), cache si hors-ligne
+  // Fichiers de l'appli : réseau d'abord en contournant le cache du navigateur
+  // (sinon le téléphone peut garder l'ancienne version), cache seulement si hors-ligne
   if (url.origin === location.origin) {
-    e.respondWith(fetch(e.request).then((res) => {
+    e.respondWith(fetch(e.request, { cache: "no-cache" }).then((res) => {
       if (res.ok) { const copy = res.clone(); caches.open(VERSION).then((c) => c.put(e.request, copy)); }
       return res;
     }).catch(() => caches.match(e.request, { ignoreSearch: true }).then((r) => r || caches.match("index.html"))));

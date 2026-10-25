@@ -1,4 +1,5 @@
 // GymTrack — appli de suivi muscu / nutrition / corps.
+const APP_VERSION = "3 · 25/10/2026";
 // Tout est stocké en local sur le téléphone (localStorage). Aucun compte, aucun serveur, 100% gratuit.
 
 // ============================================================
@@ -1102,6 +1103,9 @@ function viewSettings() {
       <p class="small"><b>Android (Chrome)</b> : menu ⋮ → « Ajouter à l'écran d'accueil » / « Installer l'application ».</p>
       <p class="small"><b>iPhone (Safari)</b> : bouton Partager ⬆️ → « Sur l'écran d'accueil ».</p>
       <p class="muted small">L'appli fonctionne ensuite hors-ligne (sauf la recherche/scan d'aliments qui a besoin d'internet).</p></div>
+    <div class="card stack"><h2>🔄 Mise à jour</h2>
+      <p class="muted small" style="margin:0">Version installée : <b style="color:var(--text)">${APP_VERSION}</b>. L'appli se met à jour toute seule à l'ouverture (avec internet). Si tu vois encore une ancienne version, force la mise à jour : tes données ne sont pas effacées.</p>
+      <button class="btn block" data-act="force-update">🔄 Forcer la mise à jour</button></div>
     <p class="muted small center">GymTrack · 100% gratuit · Données aliments : Open Food Facts · Images d'exercices : free-exercise-db</p>`;
 }
 
@@ -1240,6 +1244,7 @@ const ACTIONS = {
   "del-body": (el) => { if (!confirm("Supprimer cette mesure ?")) return; state.body = state.body.filter((b) => b.id !== el.dataset.id); save(); closeModal(); route(); },
 
   // réglages
+  "force-update": () => { toast("Mise à jour…"); forceUpdate(); },
   export: () => {
     saveNow();
     const blob = new Blob([JSON.stringify(state, null, 1)], { type: "application/json" });
@@ -1289,8 +1294,27 @@ document.addEventListener("change", (e) => {
 // ============================================================
 //  Démarrage
 // ============================================================
+// Mise à jour automatique : on vérifie s'il y a une nouvelle version à chaque ouverture,
+// et dès qu'elle est installée on recharge la page pour l'afficher.
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
-  navigator.serviceWorker.register("sw.js").catch(() => {});
+  const hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then((reg) => {
+    reg.update().catch(() => {});
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) reg.update().catch(() => {}); });
+  }).catch(() => {});
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (!hadController || reloaded) return;
+    reloaded = true; saveNow(); location.reload();
+  });
+}
+async function forceUpdate() {
+  saveNow();
+  try {
+    if ("serviceWorker" in navigator) for (const r of await navigator.serviceWorker.getRegistrations()) await r.unregister();
+    for (const k of await caches.keys()) if (k !== "gymtrack-img") await caches.delete(k);
+  } catch (e) { /* tant pis, on recharge quand même */ }
+  location.reload();
 }
 if (!location.hash) location.replace("#/accueil");
 route();
