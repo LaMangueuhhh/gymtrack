@@ -21,7 +21,8 @@ function stepsCard(d) {
   const days = [...Array(7)].map((_, i) => { const x = parseDay(d); x.setDate(x.getDate() - 6 + i); return dayStr(x); });
   const max = Math.max(goal, ...days.map(stepsOf));
   return `<div class="card steps-card">
-    <div class="row between"><h3>🚶 Pas</h3><button class="btn sm" data-act="steps-edit" data-d="${d}">${n ? "Modifier" : "＋ Ajouter"}</button></div>
+    <div class="row between"><h3>🚶 Pas ${state.stepsAt?.[d] ? `<span class="muted small" style="font-weight:500">· maj ${state.stepsAt[d]}</span>` : ""}</h3>
+      <div class="row" style="gap:6px">${d === dayStr() ? `<a class="btn sm" href="${STEPS_SHORTCUT_URL}" data-mark="steps" aria-label="Actualiser depuis Santé">🔄 Santé</a>` : ""}<button class="btn sm" data-act="steps-edit" data-d="${d}">${n ? "Modifier" : "＋ Ajouter"}</button></div></div>
     <div class="row" style="margin-top:8px;align-items:flex-end"><b class="steps-n">${n.toLocaleString("fr-FR")}</b><span class="muted small" style="margin-bottom:6px">/ ${goal.toLocaleString("fr-FR")} pas</span></div>
     <div class="progress steps-bar"><div style="width:${pct}%"></div></div>
     <div class="row between small muted" style="margin-top:6px"><span>${n ? `≈ ${r1(km).toString().replace(".", ",")} km · 🔥 ${stepsKcal(n)} kcal brûlées` : "Pas encore de pas aujourd'hui"}</span>
@@ -57,9 +58,17 @@ const STEPS_SHORTCUT = "GymTrack Pas";
 const STEPS_SHORTCUT_URL = "shortcuts://run-shortcut?name=" + encodeURIComponent(STEPS_SHORTCUT);
 
 // Nombre de pas lu dans un texte : « 12 345 », « 12345,0 », « 12.345 », « 12345 pas »…
+function parseOneNumber(line) {
+  const clean = String(line).replace(/\d{1,2}:\d{2}(:\d{2})?/g, " "); // ignore les heures « 08:00 »
+  const m = clean.match(/(\d[\d\s\u202f\u00a0.,]*)\s*pas\b/i) || clean.match(/\d[\d\s\u202f\u00a0.,]*/); // de préférence le nombre devant « pas »
+  if (!m) return 0;
+  const t = (m[1] || m[0]).trim().replace(/[.,]\d{1,2}$/, ""); // enlève une partie décimale éventuelle (« ,0 »)
+  return parseInt(t.replace(/\D/g, ""), 10) || 0;
+}
 function parseStepsText(txt) {
-  const t = String(txt).trim().replace(/[.,]\d{1,2}(?!\d)\s*\D*$/, ""); // enlève une partie décimale éventuelle (« ,0 »)
-  const n = parseInt(t.replace(/\D/g, ""), 10);
+  const lines = String(txt).split(/[\r\n]+/).map((l) => l.trim()).filter(Boolean);
+  // plusieurs lignes = liste d'échantillons (raccourci sans « Calculer les statistiques ») : on additionne
+  const n = lines.length > 1 ? lines.reduce((a, l) => a + parseOneNumber(l), 0) : parseOneNumber(lines[0] || "");
   return n > 0 && n < 200000 ? n : 0;
 }
 
@@ -68,9 +77,12 @@ async function pasteSteps(d) {
   try {
     const txt = await navigator.clipboard.readText();
     const n = parseStepsText(txt);
-    if (!n) return toast("Pas de nombre de pas dans le presse-papiers");
-    state.steps[d] = n; save(); closeModal(); route();
-    toast(`🚶 ${n.toLocaleString("fr-FR")} pas importés · 🔥 ${stepsKcal(n)} kcal`);
+    if (!n) return toast(`Le presse-papiers ne contient pas de nombre de pas${txt ? ` (« ${String(txt).slice(0, 30)} »)` : ""}. Relance le raccourci.`, 5000);
+    state.steps[d] = n; state.stepsAt = { ...(state.stepsAt || {}), [d]: nowHM() };
+    saveNow(); closeModal();
+    if (location.hash !== "#/accueil") go("#/accueil"); else route();
+    setTimeout(() => document.querySelector(".steps-card")?.scrollIntoView({ behavior: "smooth", block: "center" }), 150);
+    toast(`🚶 ${n.toLocaleString("fr-FR")} pas importés · 🔥 ${stepsKcal(n)} kcal`, 3500);
   } catch (e) {
     toast("Impossible de lire le presse-papiers : colle le nombre dans la case");
     $("stepsIn")?.focus();
@@ -110,4 +122,12 @@ function viewStepsHealth() {
     </ul>
     <a class="btn block" href="x-apple-health://" data-mark="steps">📱 Ouvrir l'app Santé</a>
     <button class="btn block" style="margin-top:8px" data-act="steps-edit" data-d="${dayStr()}">✏️ Taper mes pas à la main</button></div>`;
+}
+
+// Retour depuis le raccourci : grosse fenêtre « Coller » (le collage doit venir d'un toucher, règle d'iPhone)
+function stepsReturnModal() {
+  openModal("🚶 Tes pas sont copiés ?", `<div class="stack center">
+    <p class="muted small" style="margin:0">Touche le bouton ci-dessous. Si iPhone affiche « Coller », touche-le.</p>
+    <button class="btn primary block big" data-act="steps-paste" data-d="${dayStr()}">📋 Coller mes pas</button>
+    <button class="btn block" data-act="steps-edit" data-d="${dayStr()}">✏️ Taper à la main</button></div>`);
 }

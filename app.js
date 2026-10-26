@@ -1,5 +1,5 @@
 // GymTrack — appli de suivi muscu / nutrition / corps.
-const APP_VERSION = "11 · 26/10/2026";
+const APP_VERSION = "12 · 26/10/2026";
 // Tout est stocké en local sur le téléphone (localStorage). Aucun compte, aucun serveur, 100% gratuit.
 
 // ============================================================
@@ -1980,7 +1980,7 @@ const ACTIONS = {
 function guessMeal() { const h = new Date().getHours(); return h < 11 ? "pdj" : h < 15 ? "dej" : h < 18 ? "snack" : "diner"; }
 
 // Liens vers Raccourcis / Santé : vrais liens (plus fiables sur iPhone), on note juste qu'on attend les pas au retour
-document.addEventListener("click", (e) => { if (e.target.closest("[data-mark=steps]")) { ui.awaitSteps = true; saveNow(); } });
+document.addEventListener("click", (e) => { if (e.target.closest("[data-mark=steps]")) { ui.awaitSteps = true; try { sessionStorage.setItem("awaitSteps", Date.now()); } catch (er) { /* rien */ } saveNow(); } });
 
 document.addEventListener("click", (e) => {
   const el = e.target.closest("[data-act]");
@@ -2075,7 +2075,7 @@ function bodyZoom() {
 }
 
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden && ui.awaitSteps) { ui.awaitSteps = false; setTimeout(() => { stepsModal(dayStr()); toast("Touche « 📋 Coller les pas copiés »"); }, 300); }
+  if (!document.hidden && ui.awaitSteps) { ui.awaitSteps = false; try { sessionStorage.removeItem("awaitSteps"); } catch (er) { /* rien */ } setTimeout(stepsReturnModal, 300); }
 });
 
 // Séance en cours : on sélectionne le contenu au toucher (on tape directement par-dessus)
@@ -2125,3 +2125,8 @@ if (!state.settings.agendaReminder) {
 if (!location.hash) location.replace("#/accueil");
 route();
 checkReminders();
+// Page rechargée pendant le passage dans Raccourcis : on propose quand même de coller
+try {
+  const t = +sessionStorage.getItem("awaitSteps");
+  if (t && Date.now() - t < 5 * 60000) { sessionStorage.removeItem("awaitSteps"); setTimeout(stepsReturnModal, 400); }
+} catch (er) { /* rien */ }
