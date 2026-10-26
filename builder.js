@@ -54,7 +54,8 @@ function viewBuilder() {
       ${missing.length ? `<p class="small muted" style="margin-bottom:0">Pas encore travaillé : ${missing.map((m) => `<b style="color:var(--text)">${MUSCLES[m]}</b>`).join(", ")}</p>` : `<p class="small" style="color:var(--green);margin-bottom:0">✅ Tous les muscles du groupe sont travaillés</p>`}
       ${Object.values(cnt).some((n) => n >= 4) ? `<p class="small" style="color:var(--orange);margin-bottom:0">⚠️ Un muscle est travaillé 4 fois ou plus en principal : c'est beaucoup pour une seule séance.</p>` : ""}
       <label class="field" style="margin-top:12px">Nom de la séance<input id="bName" data-in="b-name" value="${esc(build.name)}" placeholder="${esc(w.nom)}"></label>
-      <div class="grid2" style="margin-top:10px"><button class="btn" data-act="b-save">💾 Enregistrer</button><button class="btn primary" data-act="b-start">▶ Commencer</button></div>
+      <button class="btn primary block big" style="margin-top:10px" data-act="b-plan">📅 Programmer${build.planDate ? " pour " + fmtPlanDay(build.planDate).toLowerCase() : " (date et heure)"}</button>
+      <div class="grid2" style="margin-top:8px"><button class="btn" data-act="b-save">💾 Enregistrer</button><button class="btn" data-act="b-start">▶ Lancer maintenant</button></div>
       <button class="btn sm block danger" style="margin-top:8px" data-act="b-reset">Tout effacer</button></div>`;
   }
 

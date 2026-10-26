@@ -537,3 +537,12 @@ input[type=range] { padding: 0; min-height: 30px; accent-color: var(--accent); b
 /* Nutri-Score */
 .nutri { flex: none; width: 24px; height: 24px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; font-weight: 800; font-size: 13px; color: #fff; }
 .ns-a { background: #038141; } .ns-b { background: #85bb2f; } .ns-c { background: #fecb02; color: #222; } .ns-d { background: #ee8100; } .ns-e { background: #e63e11; }
+
+/* ---------- Séances programmées ---------- */
+.cal-day.future { background: transparent; border-style: dashed; }
+.cal-day.planned { border: 2px solid var(--blue); background: rgba(77,163,255,.12); }
+.cal-day.planned small { font-size: 12px; }
+.plan-row .plan-date { display: flex; flex-direction: column; align-items: center; min-width: 52px; flex: none; }
+.plan-row .plan-date b { font-size: 16px; color: var(--blue); font-variant-numeric: tabular-nums; }
+.plan-row .plan-date span { font-size: 11px; color: var(--muted); text-transform: capitalize; }
+.plan-row.done { opacity: .55; }

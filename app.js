@@ -1,5 +1,5 @@
 // GymTrack — appli de suivi muscu / nutrition / corps.
-const APP_VERSION = "14 · 26/10/2026";
+const APP_VERSION = "15 · 26/10/2026";
 // Tout est stocké en local sur le téléphone (localStorage). Aucun compte, aucun serveur, 100% gratuit.
 
 // ============================================================
@@ -52,6 +52,7 @@ const DEFAULT_STATE = {
   myWorkouts: [],
   steps: {},
   sleep: {},
+  planned: [],
   settings: { rest: 90, glass: 250, waterGoal: "", health: { on: false }, defiOffset: 0 },
 };
 let state = load();
@@ -407,6 +408,8 @@ function viewHome() {
   if (state.current) {
     html += `<div class="card highlight"><p class="eyebrow">Séance en cours</p><h2>${esc(state.current.name)}</h2>
       <a class="btn primary block big" href="#/live">⏱️ Reprendre</a></div>`;
+  } else if (plannedTodayCard()) {
+    html += plannedTodayCard();
   } else if (ap) {
     const idx = (state.activeProgram.next || 0) % ap.seances.length, day = ap.seances[idx];
     html += `<div class="card highlight"><p class="eyebrow">${esc(ap.nom)}</p><h2>${esc(day.nom)}</h2>
@@ -429,6 +432,7 @@ function viewHome() {
     <a class="stat" href="#/corps"><b>${w ? r1(w) : "–"}</b><span>kg</span></a>
   </div>`;
 
+  html += upcomingCard();
   const df = defiOf(dayStr()), dStreak = defiStreak();
   html += `<a class="card row defi-mini" href="#/defi"><span class="defi-flame">🔥</span><div class="grow"><b>${state.defis[dayStr()]?.complete ? "Défi du jour réussi !" : "Défi du jour"}</b>
     <div class="muted small">${df.items.map((it) => exById(it.exId).nom).slice(0, 3).join(" · ")}…</div>
@@ -581,12 +585,13 @@ function agendaHtml() {
       ${'<div></div>'.repeat(offset)}
       ${monthDays.map((d, i) => {
         const v = visitOf(d), st = dayStatus(d), min = v && st === "gym" ? visitMinutes(v) : 0;
-        const todo = !st && d < today && d >= start;
-        return `<button class="cal-day ${st === "gym" ? "on" : st ? "st-" + st : ""} ${todo ? "todo" : ""} ${d === today ? "today" : ""}" data-act="day" data-d="${d}" ${d > today ? "disabled" : ""}>
-          <span>${i + 1}</span>${st && st !== "gym" ? `<small>${DAY_STATUS[st].icon}</small>` : min ? `<small>${fmtDur(min)}</small>` : st ? "<small>✓</small>" : todo ? "<small>?</small>" : ""}</button>`;
+        const todo = !st && d < today && d >= start, plan = plannedOn(d).some((p) => !p.done);
+        return `<button class="cal-day ${st === "gym" ? "on" : st ? "st-" + st : ""} ${todo ? "todo" : ""} ${d > today ? "future" : ""} ${plan ? "planned" : ""} ${d === today ? "today" : ""}" data-act="day" data-d="${d}">
+          <span>${i + 1}</span>${st && st !== "gym" ? `<small>${DAY_STATUS[st].icon}</small>` : min ? `<small>${fmtDur(min)}</small>` : st ? "<small>✓</small>" : plan ? "<small>📌</small>" : todo ? "<small>?</small>" : ""}</button>`;
       }).join("")}
     </div>
-    <div class="cal-legend"><span><i class="on"></i>Salle</span><span>😴 Repos</span><span>🖕 Flemme</span><span><i class="todo"></i>À remplir</span></div></div>
+    <div class="cal-legend"><span><i class="on"></i>Salle</span><span>😴 Repos</span><span>🖕 Flemme</span><span><i class="todo"></i>À remplir</span><span>📌 Prévue</span></div>
+    <p class="muted small center" style="margin:8px 0 0">Touche un jour à venir pour y programmer une séance</p></div>
     <div class="grid3">
       <div class="stat"><b>${count("gym")}</b><span>🏋️ jours à la salle</span></div>
       <div class="stat"><b>${count("repos")}</b><span>😴 repos</span></div>
@@ -604,6 +609,7 @@ function agendaHtml() {
 }
 
 function dayModal(d) {
+  if (d > dayStr()) return planPickModal(d);
   const v = visitOf(d) || {};
   const sess = state.sessions.filter((s) => s.date === d);
   dayModal.status = dayStatus(d) || "gym";
@@ -617,6 +623,7 @@ function dayModal(d) {
     <button class="btn primary block" data-act="save-visit" data-d="${d}">Enregistrer</button>
     ${v.id ? `<button class="btn danger block" data-act="del-visit" data-d="${d}">Effacer ce jour</button>` : ""}
     ${sess.length ? `<div class="section-title" style="margin-top:6px">Séances ce jour-là</div><div class="card" style="margin:0">${sess.map(sessionLine).join("")}</div>` : ""}
+    ${plannedOn(d).length ? `<div class="section-title" style="margin-top:6px">Prévu ce jour-là</div><div class="card list-card" style="margin:0">${plannedOn(d).map((p) => plannedRow(p, false)).join("")}</div>` : ""}
   </div>`);
   const upd = () => { const m = visitMinutes({ arrivee: $("vArr").value, depart: $("vDep").value }); $("vDur").textContent = m ? fmtDur(m) : "–"; };
   $("vArr").addEventListener("input", upd); $("vDep").addEventListener("input", upd); upd();
@@ -990,6 +997,8 @@ function saveSession() {
     exercises, fatigue: finishModal.getFatigue(), feel: finishModal.getFeel(), notes: $("notesIn").value.trim(), programId: c.programId || null, pains: { ...finishModal.pains },
   };
   state.sessions.push(s);
+  const pl = c.plannedId && state.planned.find((x) => x.id === c.plannedId);
+  if (pl) pl.done = s.id;
   const rankUps = exercises.map((e) => { const ex = exById(e.exId), ri = rankInfo(ex); return ri && ri.i > rankBefore[e.exId] && ri.i > 0 ? `${ex.nom} → ${RANKS[ri.i].nom}` : null; }).filter(Boolean);
   const vToday = visitOf(c.date);
   if (!vToday) state.visits.push({ id: uid(), date: c.date, status: "gym", arrivee: nowHM(new Date(c.start)), depart: nowHM(), note: "" });
@@ -1195,7 +1204,7 @@ function viewWorkout(id) {
         <div class="stat"><b>${w.ex.length}</b><span>exercices</span></div>
         <div class="stat"><b style="font-size:16px;padding:5px 0">${levelDots(w.niveau)}</b><span>${LEVELS[w.niveau]}</span></div></div>
       <button class="btn primary block big" style="margin-top:12px" data-act="start-workout" data-id="${w.id}">▶ Commencer</button>
-      <button class="btn sm block" style="margin-top:8px" data-act="share-w" data-id="${w.id}">📤 Partager à un ami</button>
+      <div class="grid2" style="margin-top:8px"><button class="btn sm" data-act="plan-w" data-id="${w.id}">📅 Programmer</button><button class="btn sm" data-act="share-w" data-id="${w.id}">📤 Partager</button></div>
       ${w.mine ? `<div class="grid2" style="margin-top:8px"><button class="btn sm" data-act="my-edit" data-id="${w.id}">✏️ Modifier</button><button class="btn sm danger" data-act="my-del" data-id="${w.id}">🗑 Supprimer</button></div>` : ""}</div>
     <div class="card"><h2>Muscles travaillés</h2>${bodyMap(fake)}</div>
     <div class="card list-card">${w.ex.map(([exId, sets, reps, restS]) => { const ex = exById(exId); return `<div class="list-item" data-act="ex-info" data-id="${exId}">
@@ -1788,6 +1797,22 @@ const ACTIONS = {
   "body-view": (el) => { bodyZoom.view = el.dataset.v; bodyZoom(); },
   "body-all": () => { bodyZoom.all = !bodyZoom.all; bodyZoom(); },
 
+  // programmation
+  "plan-w": (el) => planModal(allWorkouts().find((x) => x.id === el.dataset.id)),
+  "plan-day": (el) => { $("planDate").value = el.dataset.d; document.querySelectorAll("[data-act=plan-day]").forEach((b) => b.classList.toggle("on", b === el)); },
+  "plan-save": () => savePlan(),
+  "plan-start": (el) => { closeModal(); startPlanned(el.dataset.id); },
+  "plan-menu": (el) => planMenu(el.dataset.id),
+  "plan-move": (el) => {
+    const p = state.planned.find((x) => x.id === el.dataset.id);
+    if (!$("mvDate").value) return toast("Choisis une date");
+    Object.assign(p, { date: $("mvDate").value, time: $("mvTime").value, notified: false });
+    save(); closeModal(); route(); toast(`📅 Déplacée ${fmtPlanDay(p.date).toLowerCase()}${p.time ? " à " + p.time : ""}`);
+  },
+  "plan-del": (el) => { if (!confirm("Annuler cette séance prévue ?")) return; state.planned = state.planned.filter((x) => x.id !== el.dataset.id); save(); closeModal(); route(); },
+  "plan-pick": (el) => { const w = allWorkouts().find((x) => x.id === el.dataset.id); planModal(w); $("planDate").value = el.dataset.d; document.querySelectorAll("[data-act=plan-day]").forEach((b) => b.classList.toggle("on", b.dataset.d === el.dataset.d)); },
+  "plan-create": (el) => { build.planDate = el.dataset.d; closeModal(); go("#/creer"); },
+
   // partage
   "share-w": (el) => shareModal(allWorkouts().find((x) => x.id === el.dataset.id)),
   "share-s": (el) => {
@@ -1881,6 +1906,14 @@ const ACTIONS = {
     if (i >= 0) state.myWorkouts[i] = item; else state.myWorkouts.unshift(item);
     save(); build = { groups: [], picks: [], name: "" };
     ui.wCat = "Mes séances"; go("#/entrainer/seances"); toast("💾 Séance enregistrée dans « Mes séances »");
+  },
+  "b-plan": () => {
+    const w = buildWorkout(), d = build.planDate;
+    // on la garde aussi dans « Mes séances » pour pouvoir la refaire
+    if (!state.myWorkouts.some((x) => x.nom === w.nom)) state.myWorkouts.unshift({ id: "my_" + uid(), mine: true, nom: w.nom, cat: "Mes séances", niveau: 2, desc: `Séance perso : ${build.groups.join(", ") || "sur mesure"}.`, groups: [...build.groups], ex: w.ex });
+    planModal(w);
+    if (d) { $("planDate").value = d; document.querySelectorAll("[data-act=plan-day]").forEach((b) => b.classList.toggle("on", b.dataset.d === d)); }
+    planModal.after = () => { build = { groups: [], picks: [], name: "" }; go("#/accueil"); };
   },
   "my-edit": (el) => {
     const w = state.myWorkouts.find((x) => x.id === el.dataset.id);
