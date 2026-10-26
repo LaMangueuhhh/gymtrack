@@ -23,6 +23,41 @@ function defaultScheme(ex) {
   const big = familiesOf(ex.id).some((f) => ["Poussée horizontale", "Poussée inclinée", "Tirage vertical", "Tirage horizontal", "Squat", "Charnière de hanche", "Fente", "Développé épaules"].includes(f));
   return big ? { sets: 4, reps: "8-10", rest: 120 } : { sets: 3, reps: "10-12", rest: 75 };
 }
+// Ordre idéal d'une séance : technique d'abord, puis les gros mouvements polyarticulaires
+// (quand tu es frais), l'isolation, les petits muscles, les abdos et enfin le cardio.
+const ORDER_TIERS = [
+  { label: "Technique : à faire en premier, bien frais", fams: [], ids: ["c_muscle_up", "c_hspu", "c_pistol"] },
+  { label: "Gros mouvement de base : le plus lourd", fams: ["Squat", "Charnière de hanche", "Poussée horizontale", "Poussée inclinée", "Tirage vertical", "Tirage horizontal", "Développé épaules", "Fente"] },
+  { label: "Isolation d'un gros muscle", fams: ["Écarté pectoraux", "Fessiers", "Quadriceps (isolation)", "Ischio-jambiers", "Élévations latérales", "Arrière d'épaule", "Adducteurs", "Trapèzes"] },
+  { label: "Petit muscle : ils fatiguent vite", fams: ["Biceps", "Triceps", "Mollets"] },
+  { label: "Abdos / gainage : en fin de séance", fams: ["Abdos", "Gainage", "Obliques", "Lombaires"] },
+  { label: "Cardio : à la fin pour garder ta force", fams: ["Cardio"] },
+];
+// ordre de priorité à l'intérieur des gros mouvements : jambes/dos lourds avant le reste
+const BIG_RANK = ["Squat", "Charnière de hanche", "Poussée horizontale", "Tirage vertical", "Poussée inclinée", "Tirage horizontal", "Développé épaules", "Fente"];
+const NOT_BIG = ["extensions_lombaires", "kb_swing", "c_pompes_declinees"]; // pas des « mouvements lourds » malgré leur famille
+function orderInfo(id) {
+  const ex = exById(id), fams = familiesOf(id);
+  let tier = ORDER_TIERS.findIndex((t) => (t.ids || []).includes(id));
+  if (tier < 0) {
+    const tiers = fams.map((f) => ORDER_TIERS.findIndex((t) => t.fams.includes(f))).filter((t) => t >= 0);
+    tier = tiers.length ? Math.min(...tiers) : ex.type === "cardio" || ex.type === "tapis" ? 5 : ex.type === "temps" ? 4 : 2;
+    if (tier === 1 && NOT_BIG.includes(id)) tier = Math.min(...tiers.filter((t) => t > 1).concat(2));
+  }
+  const big = Math.min(...fams.map((f) => BIG_RANK.indexOf(f)).filter((r) => r >= 0).concat(9));
+  // à effort égal : barre > haltères > poids du corps > machine (le plus exigeant en stabilité d'abord)
+  const t = equipTag(ex).txt, gear = t.startsWith("Barre") && !t.includes("traction") ? 0 : t === "Haltères" ? 1 : ex.machine ? 3 : 2;
+  return { tier, rank: tier * 100 + (tier === 1 ? (ex.machine ? 50 : 0) + big * 5 : 0) + gear };
+}
+const smartSort = (list, idOf) => list.map((x, i) => [x, orderInfo(idOf(x)).rank, i]).sort((a, b) => a[1] - b[1] || a[2] - b[2]).map((x) => x[0]);
+const isSmartOrder = (list, idOf) => smartSort(list, idOf).every((x, i) => x === list[i]);
+// insère un exo au bon endroit plutôt qu'à la fin
+function smartInsert(list, item, idOf) {
+  const r = orderInfo(idOf(item)).rank, i = list.findIndex((x) => orderInfo(idOf(x)).rank > r);
+  if (i < 0) list.push(item); else list.splice(i, 0, item);
+}
+const ORDER_WHY = "On commence par ce qui demande le plus de force et de technique, quand tu es frais : c'est là que tu soulèves le plus lourd, en sécurité. Ensuite l'isolation, puis les petits muscles (bras, mollets) qui fatiguent vite, les abdos, et le cardio à la fin pour ne pas vider tes forces avant.";
+
 const buildWorkout = () => ({ nom: build.name || `Ma séance ${build.groups.join(" + ")}`, ex: build.picks.map((p) => [p.exId, p.sets, p.reps, p.rest]) });
 
 function viewBuilder() {
@@ -44,10 +79,16 @@ function viewBuilder() {
     const missing = Object.keys(gm).filter((m) => m !== "cardio" && gm[m] >= 2 && !cnt[m]);
     const w = buildWorkout();
     html += `<div class="card"><div class="row between"><h3>2. Ta séance</h3><span class="muted small">${build.picks.length} exos · ~${workoutMinutes(w)} min</span></div>
+      ${build.picks.length > 1 ? (isSmartOrder(build.picks, (p) => p.exId)
+        ? `<p class="small" style="color:var(--green);margin:8px 0 4px">🧠 Tes exos sont dans l'ordre idéal : commence par <b>${esc(exById(build.picks[0].exId).nom)}</b>.</p>`
+        : `<div class="smart-order"><b>🧠 Ordre pas idéal</b><span class="small muted">Idéalement, commence par <b style="color:var(--text)">${esc(exById(smartSort(build.picks, (p) => p.exId)[0].exId).nom)}</b>.</span>
+          <button class="btn sm primary block" data-act="b-sort">Ranger dans l'ordre idéal</button></div>`) : ""}
       <div class="list-card">${build.picks.map((p, i) => { const ex = exById(p.exId); return `<div class="list-item b-pick">
-        <img class="thumb" src="${imgUrl(ex)}" alt="" loading="lazy"><div class="grow" data-act="b-edit" data-i="${i}"><b>${esc(ex.nom)}</b>
-        <div class="small"><span style="color:var(--accent)">${p.sets} × ${esc(p.reps)}</span> <span class="muted">· repos ${fmtTime(p.rest)} · modifier</span></div></div>
+        <span class="b-num">${i + 1}</span><img class="thumb" src="${imgUrl(ex)}" alt="" loading="lazy"><div class="grow" data-act="b-edit" data-i="${i}"><b>${esc(ex.nom)}</b>
+        <div class="small"><span style="color:var(--accent)">${p.sets} × ${esc(p.reps)}</span> <span class="muted">· repos ${fmtTime(p.rest)} · modifier</span></div>
+        <div class="small muted">${i ? "" : "🥇 "}${ORDER_TIERS[orderInfo(p.exId).tier].label}</div></div>
         <div class="b-ctrl"><button class="icon-btn" data-act="b-move" data-i="${i}" data-d="-1" ${i ? "" : "disabled"}>↑</button><button class="icon-btn" data-act="b-del" data-i="${i}">✕</button></div></div>`; }).join("")}</div>
+      ${build.picks.length > 1 ? `<details class="small muted" style="margin-top:8px"><summary>Pourquoi cet ordre ?</summary><p style="margin:6px 0 0">${ORDER_WHY} Les nouveaux exos sont rangés automatiquement ; tu peux toujours les déplacer avec ↑.</p></details>` : ""}
       <div class="section-title" style="margin-top:12px">Muscles travaillés</div>
       ${bodyMap(fake)}
       <div style="margin-top:8px">${Object.entries(cnt).filter(([m]) => m !== "cardio").sort((a, b) => b[1] - a[1]).map(([m, n]) => `<span class="tag ${n >= 4 ? "warn" : "main"}">${MUSCLES[m]}${n > 1 ? " ×" + n : ""}</span>`).join("")}</div>

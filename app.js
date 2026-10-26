@@ -1,5 +1,5 @@
 // GymTrack — appli de suivi muscu / nutrition / corps.
-const APP_VERSION = "14 · 26/10/2026";
+const APP_VERSION = "16 · 26/10/2026";
 // Tout est stocké en local sur le téléphone (localStorage). Aucun compte, aucun serveur, 100% gratuit.
 
 // ============================================================
@@ -1197,9 +1197,12 @@ function viewWorkout(id) {
       <button class="btn primary block big" style="margin-top:12px" data-act="start-workout" data-id="${w.id}">▶ Commencer</button>
       <button class="btn sm block" style="margin-top:8px" data-act="share-w" data-id="${w.id}">📤 Partager à un ami</button>
       ${w.mine ? `<div class="grid2" style="margin-top:8px"><button class="btn sm" data-act="my-edit" data-id="${w.id}">✏️ Modifier</button><button class="btn sm danger" data-act="my-del" data-id="${w.id}">🗑 Supprimer</button></div>` : ""}</div>
+    ${w.mine && w.ex.length > 1 && !isSmartOrder(w.ex, (x) => x[0]) ? `<div class="card smart-order"><b>🧠 Tes exos ne sont pas dans l'ordre idéal</b>
+      <span class="small muted">Idéalement, commence par <b style="color:var(--text)">${esc(exById(smartSort(w.ex, (x) => x[0])[0][0]).nom)}</b>. ${ORDER_WHY}</span>
+      <button class="btn sm primary block" data-act="my-sort" data-id="${w.id}">Ranger dans l'ordre idéal</button></div>` : ""}
     <div class="card"><h2>Muscles travaillés</h2>${bodyMap(fake)}</div>
-    <div class="card list-card">${w.ex.map(([exId, sets, reps, restS]) => { const ex = exById(exId); return `<div class="list-item" data-act="ex-info" data-id="${exId}">
-      <img class="thumb" src="${imgUrl(ex)}" alt="" loading="lazy"><div class="grow"><b>${esc(ex.nom)}</b>
+    <div class="card list-card">${w.ex.map(([exId, sets, reps, restS], i) => { const ex = exById(exId); return `<div class="list-item" data-act="ex-info" data-id="${exId}">
+      ${w.mine ? `<span class="b-num">${i + 1}</span>` : ""}<img class="thumb" src="${imgUrl(ex)}" alt="" loading="lazy"><div class="grow"><b>${esc(ex.nom)}</b>
       <div class="muted small">${sets} × ${esc(reps)}${restS ? ` · repos ${fmtTime(restS)}` : ""}</div></div><span class="arrow">ⓘ</span></div>`; }).join("")}</div>`;
 }
 
@@ -1860,12 +1863,14 @@ const ACTIONS = {
   "b-group": (el) => { const g = el.dataset.g; build.groups = build.groups.includes(g) ? build.groups.filter((x) => x !== g) : [...build.groups, g]; route(); },
   "b-add": (el) => {
     const ex = exById(el.dataset.id);
-    build.picks.push({ exId: ex.id, ...defaultScheme(ex) });
+    smartInsert(build.picks, { exId: ex.id, ...defaultScheme(ex) }, (p) => p.exId);
     if (navigator.vibrate) navigator.vibrate(15);
     route(); toast(`＋ ${ex.nom}`, 1400);
   },
   "b-del": (el) => { build.picks.splice(+el.dataset.i, 1); route(); },
   "b-move": (el) => { const i = +el.dataset.i, a = build.picks; [a[i - 1], a[i]] = [a[i], a[i - 1]]; route(); },
+  "b-sort": () => { build.picks = smartSort(build.picks, (p) => p.exId); route(); toast("🧠 Exos rangés dans l'ordre idéal"); },
+  "my-sort": (el) => { const w = state.myWorkouts.find((x) => x.id === el.dataset.id); w.ex = smartSort(w.ex, (x) => x[0]); save(); route(); toast("🧠 Exos rangés dans l'ordre idéal"); },
   "b-edit": (el) => buildEditModal(+el.dataset.i),
   "b-edit-save": (el) => {
     const p = build.picks[+el.dataset.i];
