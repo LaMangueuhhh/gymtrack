@@ -1,6 +1,6 @@
 // Service worker : permet à l'appli de marcher hors-ligne.
-const VERSION = "gymtrack-v15";
-const SHELL = ["./", "index.html", "style.css", "app.js", "data.js", "data-extra.js", "seances.js", "alternatives.js", "builder.js", "food-ai.js", "steps.js", "sleep.js", "pains.js", "share.js", "planning.js", "vendor/qrcode.js", "ranks.js", "defi.js", "notifs.js", "motivation.txt", "bodymap.js", "foods.js", "manifest.json",
+const VERSION = "gymtrack-v14";
+const SHELL = ["./", "index.html", "style.css", "app.js", "data.js", "data-extra.js", "seances.js", "alternatives.js", "builder.js", "food-ai.js", "steps.js", "sleep.js", "pains.js", "share.js", "vendor/qrcode.js", "ranks.js", "defi.js", "notifs.js", "motivation.txt", "bodymap.js", "foods.js", "manifest.json",
   "vendor/chart.umd.js", "vendor/html5-qrcode.min.js", "icons/icon-192.png", "icons/icon-512.png"];
 
 self.addEventListener("install", (e) => {
