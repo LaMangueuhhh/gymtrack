@@ -1,5 +1,5 @@
 // GymTrack — appli de suivi muscu / nutrition / corps.
-const APP_VERSION = "10 · 25/10/2026";
+const APP_VERSION = "11 · 26/10/2026";
 // Tout est stocké en local sur le téléphone (localStorage). Aucun compte, aucun serveur, 100% gratuit.
 
 // ============================================================
@@ -334,6 +334,7 @@ const ROUTES = {
   defi: viewDefi,
   creer: viewBuilder,
   import: viewImport,
+  "pas-sante": viewStepsHealth,
   notifs: viewNotifs,
   rangs: viewRanks,
   progres: (id) => (id ? viewProgress(id) : viewProgressList()),
@@ -343,7 +344,7 @@ const ROUTES = {
   corps: viewBody,
   reglages: viewSettings,
 };
-const TAB_OF = { agenda: "progres", rangs: "progres", seances: "progres", seance: "progres", live: "entrainer", exos: "entrainer", exo: "entrainer", programmes: "entrainer", programme: "entrainer", type: "entrainer", creer: "entrainer", import: "entrainer", reglages: "", sante: "", notifs: "" };
+const TAB_OF = { agenda: "progres", rangs: "progres", seances: "progres", seance: "progres", live: "entrainer", exos: "entrainer", exo: "entrainer", programmes: "entrainer", programme: "entrainer", type: "entrainer", creer: "entrainer", import: "entrainer", "pas-sante": "", reglages: "", sante: "", notifs: "" };
 const TOP_LEVEL = ["accueil", "entrainer", "exos", "programmes", "defi", "agenda", "rangs", "seances", "progres", "nutrition", "corps"];
 // Onglets internes de « Progrès »
 const progSeg = (k) => `<div class="seg" style="margin-bottom:14px">${[["progres", "Exercices"], ["rangs", "Rangs"], ["agenda", "Agenda"]]
@@ -1799,7 +1800,7 @@ const ACTIONS = {
     save(); closeModal(); route();
     if (n) toast(`🚶 ${n.toLocaleString("fr-FR")} pas · 🔥 ${stepsKcal(n)} kcal${n >= stepGoal() ? " · objectif atteint 🎯" : ""}`);
   },
-  "steps-health": () => { ui.awaitSteps = true; saveNow(); location.href = "shortcuts://run-shortcut?name=" + encodeURIComponent("GymTrack Pas"); },
+  "copy-name": () => copyText(STEPS_SHORTCUT, "📋 Nom copié : colle-le comme nom du raccourci"),
   "steps-paste": (el) => pasteSteps(el.dataset.d),
 
   // photo IA
@@ -1977,6 +1978,9 @@ const ACTIONS = {
 };
 
 function guessMeal() { const h = new Date().getHours(); return h < 11 ? "pdj" : h < 15 ? "dej" : h < 18 ? "snack" : "diner"; }
+
+// Liens vers Raccourcis / Santé : vrais liens (plus fiables sur iPhone), on note juste qu'on attend les pas au retour
+document.addEventListener("click", (e) => { if (e.target.closest("[data-mark=steps]")) { ui.awaitSteps = true; saveNow(); } });
 
 document.addEventListener("click", (e) => {
   const el = e.target.closest("[data-act]");

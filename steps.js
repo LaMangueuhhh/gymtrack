@@ -39,17 +39,10 @@ function stepsModal(d) {
       <div class="muted small" id="stepsB"></div></div>
     <button class="btn primary block" data-act="steps-save" data-d="${d}">Enregistrer</button>
     ${d === dayStr() ? `<div class="section-title" style="margin-top:4px">Depuis Apple Santé (iPhone)</div>
-    <button class="btn block" data-act="steps-health">❤️ Récupérer mes pas depuis Santé</button>
+    <a class="btn block" href="${STEPS_SHORTCUT_URL}" data-mark="steps">❤️ Lancer le raccourci « GymTrack Pas »</a>
     <button class="btn block" data-act="steps-paste" data-d="${d}">📋 Coller les pas copiés</button>
-    <details class="guide card" style="margin:0"><summary><b>Créer le raccourci « GymTrack Pas »</b> (une fois)</summary>
-      <ol class="steps small">
-        <li>App <b>Raccourcis</b> → <b>＋</b> → nomme-le <b class="copy">GymTrack Pas</b>.</li>
-        <li>Ajoute <b>« Rechercher des échantillons de santé »</b> : Type <b>Nombre de pas</b>, Date de début <b>Aujourd'hui</b>, Regrouper par <b>Jour</b>.</li>
-        <li>Ajoute <b>« Calculer les statistiques »</b> → <b>Somme</b>.</li>
-        <li>Ajoute <b>« Copier dans le presse-papiers »</b>.</li>
-        <li>C'est tout. Ensuite : touche « Récupérer mes pas depuis Santé », reviens dans GymTrack et touche « Coller les pas copiés ».</li>
-      </ol>
-      <p class="muted small" style="margin-bottom:0">Apple ne laisse pas une appli web lire Santé directement : le raccourci sert de pont. Si tu as une Apple Watch et que le total paraît doublé, corrige-le à la main.</p></details>` : ""}
+    <a class="btn block" href="x-apple-health://" data-mark="steps">📱 Ouvrir Santé pour lire mes pas</a>
+    <a class="small center" href="#/pas-sante" style="display:block">Ça ne marche pas ? Voir le guide pas à pas</a>` : ""}
   </div>`);
   const upd = () => {
     const v = Math.round(num($("stepsIn").value));
@@ -60,11 +53,21 @@ function stepsModal(d) {
   $("stepsIn").addEventListener("input", upd); upd();
 }
 
+const STEPS_SHORTCUT = "GymTrack Pas";
+const STEPS_SHORTCUT_URL = "shortcuts://run-shortcut?name=" + encodeURIComponent(STEPS_SHORTCUT);
+
+// Nombre de pas lu dans un texte : « 12 345 », « 12345,0 », « 12.345 », « 12345 pas »…
+function parseStepsText(txt) {
+  const t = String(txt).trim().replace(/[.,]\d{1,2}(?!\d)\s*\D*$/, ""); // enlève une partie décimale éventuelle (« ,0 »)
+  const n = parseInt(t.replace(/\D/g, ""), 10);
+  return n > 0 && n < 200000 ? n : 0;
+}
+
 // Lit le nombre de pas dans le presse-papiers (copié par le raccourci)
 async function pasteSteps(d) {
   try {
     const txt = await navigator.clipboard.readText();
-    const n = Math.round(num(String(txt).replace(/\s/g, "").replace(/[^\d.,]/g, "")));
+    const n = parseStepsText(txt);
     if (!n) return toast("Pas de nombre de pas dans le presse-papiers");
     state.steps[d] = n; save(); closeModal(); route();
     toast(`🚶 ${n.toLocaleString("fr-FR")} pas importés · 🔥 ${stepsKcal(n)} kcal`);
@@ -72,4 +75,39 @@ async function pasteSteps(d) {
     toast("Impossible de lire le presse-papiers : colle le nombre dans la case");
     $("stepsIn")?.focus();
   }
+}
+
+// Guide détaillé pour relier les pas d'Apple Santé
+function viewStepsHealth() {
+  setTitle("Pas depuis Santé");
+  return `<div class="card"><h2>Pourquoi GymTrack n'apparaît pas dans Santé ?</h2>
+      <p class="small" style="margin:0">C'est <b>normal</b> : GymTrack est une appli web (installée depuis Safari), pas une appli de l'App Store. Apple ne la laissera <b>jamais</b> apparaître dans Santé → Partage → Apps, ni dans « Fichiers ». Inutile de chercher là 🙂<br><br>
+      Le pont, c'est l'app <b>Raccourcis</b> : un petit raccourci lit tes pas dans Santé et les copie, puis tu les colles dans GymTrack.</p></div>
+    <div class="section-title">1. Créer le raccourci (une seule fois)</div>
+    <div class="card"><ol class="steps">
+      <li>Ouvre l'app <b>Raccourcis</b> (icône bleue et rose, déjà sur ton iPhone).</li>
+      <li>Onglet <b>Raccourcis</b> en bas → bouton <b>＋</b> en haut à droite.</li>
+      <li>Touche le nom en haut (« Nouveau raccourci ») → <b>Renommer</b> → écris exactement :
+        <div class="row" style="margin:6px 0"><b class="copy big-copy">${STEPS_SHORTCUT}</b><button class="btn sm" data-act="copy-name">Copier</button></div>
+        <span class="muted small">Majuscules et espace compris. Si le nom est différent, iPhone dira « raccourci introuvable ».</span></li>
+      <li>Touche <b>Ajouter une action</b>, cherche <b>« échantillons »</b> et choisis <b>« Rechercher des échantillons de santé »</b>.</li>
+      <li>Dans cette action : touche <b>Type</b> → <b>Nombre de pas</b>. Puis <b>Ajouter un filtre</b> → <b>Date de début</b> → <b>est aujourd'hui</b>.</li>
+      <li>Ajoute l'action <b>« Calculer les statistiques »</b> → choisis <b>Somme</b>.</li>
+      <li>Ajoute l'action <b>« Copier dans le presse-papiers »</b>.</li>
+      <li>Touche <b>OK</b>. La première fois, iPhone demande l'accès à Santé : <b>autorise « Nombre de pas »</b>.</li>
+    </ol></div>
+    <div class="section-title">2. Récupérer tes pas</div>
+    <div class="card stack">
+      <a class="btn primary block" href="${STEPS_SHORTCUT_URL}" data-mark="steps">❤️ Lancer « ${STEPS_SHORTCUT} »</a>
+      <p class="muted small" style="margin:0">Le raccourci s'ouvre une seconde. Reviens dans GymTrack (touche « ◀ » en haut à gauche ou balaye), puis :</p>
+      <button class="btn block" data-act="steps-paste" data-d="${dayStr()}">📋 Coller les pas copiés</button>
+      <p class="muted small" style="margin:0">Si iPhone demande « Autoriser à coller ? », touche <b>Autoriser</b>.</p></div>
+    <div class="section-title">Ça bloque encore ?</div>
+    <div class="card"><ul class="steps small">
+      <li><b>« Raccourci introuvable »</b> : le nom n'est pas exactement <b>${STEPS_SHORTCUT}</b>. Renomme-le (bouton « Copier » plus haut).</li>
+      <li><b>Le nombre collé est faux</b> (doublé avec une Apple Watch) : corrige-le à la main dans la fenêtre des pas.</li>
+      <li><b>Rien ne marche</b> : plan B en 10 secondes, lis tes pas dans Santé et tape-les :</li>
+    </ul>
+    <a class="btn block" href="x-apple-health://" data-mark="steps">📱 Ouvrir l'app Santé</a>
+    <button class="btn block" style="margin-top:8px" data-act="steps-edit" data-d="${dayStr()}">✏️ Taper mes pas à la main</button></div>`;
 }
