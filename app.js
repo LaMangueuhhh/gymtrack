@@ -1,5 +1,5 @@
 // GymTrack — appli de suivi muscu / nutrition / corps.
-const APP_VERSION = "13 · 26/10/2026";
+const APP_VERSION = "14 · 26/10/2026";
 // Tout est stocké en local sur le téléphone (localStorage). Aucun compte, aucun serveur, 100% gratuit.
 
 // ============================================================
@@ -1310,7 +1310,6 @@ function viewNutrition() {
         <div class="small" style="margin-top:6px">P ${Math.round(t.p)} g · G ${Math.round(t.c)} g · L ${Math.round(t.f)} g</div></div></div>
       ${g ? `<div style="margin-top:8px">${macroBars(t, g, false)}</div>` : ""}
       ${state.settings.health?.on && state.settings.health.kcal !== false && t.k ? `<button class="btn sm block" style="margin-top:12px" data-act="health-kcal" data-d="${d}">❤️ Envoyer ${Math.max(0, Math.round(t.k) - (state.healthSent[d] || 0))} kcal à Santé</button>` : ""}</div>
-    ${stepsCard(d)}
     ${g ? weekBudgetCard(g, d) : ""}
     ${waterCard(d)}`;
 
