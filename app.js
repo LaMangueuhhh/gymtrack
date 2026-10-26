@@ -1,5 +1,5 @@
 // GymTrack — appli de suivi muscu / nutrition / corps.
-const APP_VERSION = "12 · 26/10/2026";
+const APP_VERSION = "13 · 26/10/2026";
 // Tout est stocké en local sur le téléphone (localStorage). Aucun compte, aucun serveur, 100% gratuit.
 
 // ============================================================
@@ -1363,7 +1363,7 @@ function stopScanner() {
 }
 
 function addFoodModal(meal, tab) {
-  tab = tab || (state.settings.aiKey ? "photo" : "scan");
+  tab = tab || (state.settings.aiKey ? "photo" : "search");
   const tabs = [["photo", "📸 Photo IA"], ["scan", "📷 Code-barres"], ["search", "🔍 Chercher"], ["recent", "🕘 Récents"], ["manual", "✏️ Manuel"]];
   let body = `<div class="chips" style="margin-bottom:12px">${tabs.map(([k, l]) => `<button class="chip ${k === tab ? "on" : ""}" data-act="food-tab" data-tab="${k}" data-meal="${meal}">${l}</button>`).join("")}</div>`;
   if (tab === "scan") {
@@ -1372,7 +1372,7 @@ function addFoodModal(meal, tab) {
   } else if (tab === "photo") {
     body += photoTabHtml(meal);
   } else if (tab === "search") {
-    body += `<div class="row"><input id="foodQ" placeholder="Ex : riz, poulet, Nutella…" autocomplete="off"><button class="btn" data-act="food-search" data-meal="${meal}">🔍</button></div>
+    body += `<input id="foodQ" type="search" placeholder="🔍 Ex : Trésor, Nutella, poulet, Big Mac…" autocomplete="off" enterkeyhint="search">
       <div id="foodRes" style="margin-top:8px">${basicFoodsHtml("", meal)}</div>`;
   } else if (tab === "recent") {
     body += state.recentFoods.length ? state.recentFoods.map((f, i) => foodRow(f, meal, `recent:${i}`)).join("") : `<div class="empty">Aucun aliment récent</div>`;
@@ -1392,8 +1392,9 @@ function addFoodModal(meal, tab) {
   }
   if (tab === "search") {
     const q = $("foodQ");
-    q.addEventListener("input", () => { $("foodRes").innerHTML = basicFoodsHtml(q.value, meal); });
-    q.addEventListener("keydown", (e) => { if (e.key === "Enter") searchFood(q.value, meal); });
+    q.addEventListener("input", () => searchFood(q.value, meal));
+    q.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); q.blur(); searchFood(q.value, meal, true); } });
+    setTimeout(() => q.focus(), 150);
   }
 }
 
@@ -1402,18 +1403,21 @@ function foodRow(f, meal, ref) {
   foodCache[ref] = f;
   return `<div class="list-item" data-act="pick-food" data-ref="${esc(ref)}" data-meal="${meal}">
     ${f.img ? `<img class="thumb" src="${esc(f.img)}" alt="" loading="lazy" style="object-fit:contain">` : ""}
-    <div class="grow"><b>${esc(f.nom)}</b><div class="muted small">${f.marque ? esc(f.marque) + " · " : ""}${Math.round(f.k)} kcal / 100 g</div></div><span class="arrow">＋</span></div>`;
+    <div class="grow"><b>${esc(f.nom)}</b><div class="muted small">${f.marque ? esc(f.marque) + " · " : ""}${f.qte ? esc(f.qte) + " · " : ""}${Math.round(f.k)} kcal / 100 g</div></div>
+    ${f.ns ? `<span class="nutri ns-${esc(f.ns)}">${esc(f.ns.toUpperCase())}</span>` : ""}<span class="arrow">＋</span></div>`;
 }
+// Recherche sans tenir compte des accents ni des majuscules (« tresor » trouve « Trésor »)
+const norm = (s) => String(s).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
 function basicFoodsHtml(q, meal) {
-  const ql = q.toLowerCase().trim();
-  const list = BASIC_FOODS.filter(([n]) => !ql || n.toLowerCase().includes(ql)).slice(0, ql ? 30 : 12);
-  return `<p class="muted small">${ql ? "Aliments de base" : "Aliments de base — tape un nom puis 🔍 pour chercher aussi les produits du commerce"}</p>` +
-    list.map(([nom, k, p, c, f, portion]) => foodRow({ nom, k, p, c, f, portion }, meal, `basic:${nom}`)).join("") +
-    (ql ? `<button class="btn block" data-act="food-search" data-meal="${meal}">🔍 Chercher « ${esc(q)} » dans les produits du commerce</button>` : "");
+  const words = norm(q).split(/\s+/).filter(Boolean);
+  const list = BASIC_FOODS.filter(([n]) => words.every((w) => norm(n).includes(w))).slice(0, words.length ? 12 : 10);
+  if (words.length && !list.length) return "";
+  return `<p class="muted small">${words.length ? "Aliments courants" : "Aliments courants — tape un nom pour chercher aussi parmi tous les produits vendus en France"}</p>` +
+    list.map(([nom, k, p, c, f, portion]) => foodRow({ nom, k, p, c, f, portion }, meal, `basic:${nom}`)).join("");
 }
 
-// Open Food Facts : base de données gratuite et ouverte de produits alimentaires
-const OFF_FIELDS = "code,product_name,product_name_fr,brands,nutriments,serving_quantity,image_front_small_url";
+// Open Food Facts : base de données gratuite et ouverte (plus de 900 000 produits vendus en France)
+const OFF_FIELDS = "code,product_name,product_name_fr,brands,nutriments,serving_quantity,quantity,image_front_small_url,nutriscore_grade";
 function mapOff(p, code) {
   const n = p.nutriments || {};
   const k = n["energy-kcal_100g"] ?? (n["energy_100g"] ? n["energy_100g"] / 4.184 : null);
@@ -1422,6 +1426,7 @@ function mapOff(p, code) {
     nom: p.product_name_fr || p.product_name || "Produit " + code, marque: (p.brands || "").split(",")[0],
     k: r1(num(k)), p: r1(num(n.proteins_100g)), c: r1(num(n.carbohydrates_100g)), f: r1(num(n.fat_100g)),
     portion: num(p.serving_quantity) || null, img: p.image_front_small_url || null, code,
+    qte: p.quantity || "", ns: (p.nutriscore_grade || "").length === 1 ? p.nutriscore_grade : "",
   };
 }
 async function fetchProduct(code) {
@@ -1429,20 +1434,51 @@ async function fetchProduct(code) {
   const j = await r.json();
   return j.status === 1 ? mapOff(j.product, code) : null;
 }
-async function searchFood(q, meal) {
-  if (!q.trim()) return;
-  const res = $("foodRes");
-  res.innerHTML = basicFoodsHtml(q, meal).replace(/<button[^]*$/, "") + `<p class="muted center">Recherche des produits…</p>`;
-  try {
-    const r = await fetch(`https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(q)}&search_simple=1&action=process&json=1&page_size=25&fields=${OFF_FIELDS}`);
+
+// Recherche en ligne : produits vendus en France d'abord (triés par popularité), puis le monde entier si rien
+const offCache = {};
+let offCtrl = null;
+async function offSearch(q) {
+  const key = norm(q);
+  if (offCache[key]) return offCache[key];
+  offCtrl?.abort(); offCtrl = new AbortController();
+  const get = async (host) => {
+    const url = `https://${host}.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(q)}&search_simple=1&action=process&json=1&page_size=40&sort_by=unique_scans_n&lc=fr&fields=${OFF_FIELDS}`;
+    const r = await fetch(url, { signal: offCtrl.signal });
+    if (!r.ok) throw new Error("HTTP " + r.status);
     const j = await r.json();
-    const items = (j.products || []).map((p) => mapOff(p, p.code)).filter(Boolean);
-    if (!$("foodRes")) return;
-    $("foodRes").innerHTML = basicFoodsHtml(q, meal).replace(/<button[^]*$/, "") + `<p class="muted small">Produits du commerce</p>` +
-      (items.length ? items.map((f, i) => foodRow(f, meal, `off:${i}:${f.code}`)).join("") : `<div class="empty">Aucun produit trouvé</div>`);
-  } catch (e) {
-    if ($("foodRes")) $("foodRes").insertAdjacentHTML("beforeend", `<p class="center" style="color:var(--red)">Pas de connexion internet ?</p>`);
-  }
+    return (j.products || []).map((p) => mapOff(p, p.code)).filter(Boolean);
+  };
+  let items = await get("fr");
+  if (!items.length) items = await get("world");
+  const seen = new Set();
+  items = items.filter((x) => !seen.has(x.code) && seen.add(x.code));
+  offCache[key] = items;
+  return items;
+}
+
+let searchTimer = null;
+function searchFood(q, meal, now = false) {
+  const res = $("foodRes");
+  if (!res) return;
+  const local = basicFoodsHtml(q, meal);
+  clearTimeout(searchTimer);
+  if (norm(q).length < 2) { res.innerHTML = local; return; }
+  res.innerHTML = local + `<p class="muted small">Produits du commerce (France)</p><div class="empty" style="padding:14px"><span class="spin">🔍</span> Recherche de « ${esc(q)} »…</div>`;
+  // on attend que tu aies fini de taper (la base limite le nombre de recherches par minute)
+  searchTimer = setTimeout(async () => {
+    try {
+      const items = await offSearch(q);
+      if (!$("foodRes") || $("foodQ")?.value !== q) return;
+      $("foodRes").innerHTML = local + `<p class="muted small">Produits du commerce (France) · ${items.length} résultat${items.length > 1 ? "s" : ""}</p>` +
+        (items.length ? items.map((f, i) => foodRow(f, meal, `off:${i}:${f.code}`)).join("")
+          : `<div class="empty" style="padding:14px">Aucun produit trouvé pour « ${esc(q)} ».<br><span class="small">Essaie un autre mot (ex : la marque), scanne le code-barres, ou ajoute-le en manuel.</span></div>`);
+    } catch (e) {
+      if (e.name === "AbortError" || !$("foodRes")) return;
+      $("foodRes").innerHTML = local + `<p class="center small" style="color:var(--red)">😕 La recherche en ligne ne répond pas (${navigator.onLine ? "base surchargée, réessaie dans quelques secondes" : "pas de connexion internet"}).</p>
+        <button class="btn block" data-act="food-search" data-meal="${meal}">🔄 Réessayer</button>`;
+    }
+  }, now ? 0 : 650);
 }
 
 function startScanner(meal) {
@@ -1924,7 +1960,7 @@ const ACTIONS = {
   "food-day": (el) => { const d = parseDay(ui.foodDay); d.setDate(d.getDate() + +el.dataset.delta); if (dayStr(d) <= dayStr()) { ui.foodDay = dayStr(d); route(); } },
   "add-food": (el) => addFoodModal(el.dataset.meal || guessMeal()),
   "food-tab": (el) => addFoodModal(el.dataset.meal, el.dataset.tab),
-  "food-search": (el) => searchFood($("foodQ").value, el.dataset.meal),
+  "food-search": (el) => { delete offCache[norm($("foodQ").value)]; searchFood($("foodQ").value, el.dataset.meal, true); },
   "code-go": (el) => { stopScanner(); lookupCode($("codeIn").value, el.dataset.meal); },
   "pick-food": (el) => {
     const ref = el.dataset.ref;

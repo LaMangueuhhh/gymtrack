@@ -57,3 +57,58 @@ const BASIC_FOODS = [
   ["Jus d'orange", 45, 0.7, 10.4, 0.2, 250],
   ["Bière (5%)", 43, 0.5, 3.6, 0, 330],
 ];
+
+// Aliments courants en France (valeurs moyennes pour 100 g, Ciqual / étiquettes) — complète la recherche en ligne
+BASIC_FOODS.push(
+  // Petit-déjeuner
+  ["Céréales Trésor chocolat noisette (Kellogg's)", 447, 8, 64, 17, 30], ["Céréales Chocapic", 387, 8.5, 73, 5.5, 30], ["Corn flakes", 378, 7, 84, 0.9, 30],
+  ["Céréales Special K", 379, 9, 78, 1.5, 30], ["Céréales Lion", 409, 7, 74, 9, 30], ["Muesli", 370, 9, 64, 7, 45], ["Granola", 450, 9, 62, 18, 45],
+  ["Croissant", 406, 8, 45, 21, 50], ["Pain au chocolat", 414, 8, 47, 21, 70], ["Pain de mie", 265, 8, 48, 4, 25], ["Biscottes", 409, 11, 73, 6, 8],
+  ["Brioche", 360, 8, 52, 13, 40], ["Pain aux céréales", 260, 10, 44, 4, 50], ["Crêpe", 225, 6, 30, 9, 60], ["Pancake", 230, 6, 33, 8, 50], ["Gaufre", 400, 7, 50, 19, 60],
+  ["Nutella", 539, 6.3, 57.5, 31, 15], ["Confiture", 250, 0.4, 60, 0.1, 20], ["Sucre", 400, 0, 100, 0, 5], ["Beurre de cacahuète crunchy", 600, 25, 15, 50, 20],
+  // Produits laitiers / fromages
+  ["Lait entier", 65, 3.2, 4.7, 3.6, 250], ["Lait écrémé", 34, 3.4, 4.9, 0.1, 250], ["Lait d'avoine", 45, 0.5, 6.5, 1.5, 250], ["Lait chocolaté", 75, 3.3, 10.5, 2, 250],
+  ["Yaourt grec", 120, 4, 4, 10, 150], ["Yaourt aux fruits", 97, 3.5, 14, 2.5, 125], ["Petit-suisse", 110, 9, 4, 6.5, 60], ["Fromage blanc 3 %", 75, 7, 4, 3, 150],
+  ["Crème fraîche 30 %", 292, 2.4, 3, 30, 30], ["Crème légère 15 %", 160, 2.6, 4, 15, 30], ["Camembert", 270, 20, 0.5, 21, 30], ["Comté", 413, 27, 0, 34, 30],
+  ["Chèvre (bûche)", 300, 18, 1, 25, 30], ["Raclette (fromage)", 350, 23, 0, 28, 80], ["Feta", 264, 14, 4, 21, 30], ["Parmesan", 392, 33, 0, 28, 15],
+  ["Fromage râpé", 380, 27, 0, 30, 20], ["Babybel", 300, 22, 0, 24, 20], ["Kiri / Vache qui rit", 240, 9, 6, 20, 17],
+  // Viandes / charcuterie / poissons
+  ["Poulet rôti avec peau", 215, 25, 0, 13, 150], ["Cuisse de poulet", 220, 24, 0, 14, 150], ["Nuggets de poulet", 270, 15, 17, 16, 120], ["Cordon bleu", 240, 13, 15, 14, 100],
+  ["Jambon cru", 240, 30, 0, 13, 30], ["Blanc de poulet (tranches)", 105, 21, 1, 2, 40], ["Saucisson sec", 410, 25, 1, 34, 30], ["Chorizo", 450, 24, 2, 38, 30],
+  ["Lardons", 300, 15, 1, 27, 50], ["Saucisse de Toulouse", 290, 16, 1, 25, 100], ["Merguez", 300, 16, 1, 26, 100], ["Knacki / saucisse de Strasbourg", 270, 12, 2, 24, 35],
+  ["Côte de porc", 230, 26, 0, 14, 150], ["Rôti de porc", 180, 27, 0, 8, 100], ["Agneau (gigot)", 230, 26, 0, 14, 150], ["Bacon", 300, 17, 1, 26, 30],
+  ["Thon à l'huile égoutté", 190, 26, 0, 10, 80], ["Sardines à l'huile", 210, 24, 0, 13, 90], ["Maquereau", 230, 20, 0, 17, 100], ["Saumon fumé", 180, 22, 0, 10, 50],
+  ["Surimi", 105, 7, 15, 2, 60], ["Poisson pané", 210, 13, 18, 9, 100], ["Tofu", 120, 12, 2, 7, 100], ["Steak végétal", 200, 17, 8, 11, 100],
+  // Féculents
+  ["Pâtes crues", 360, 12, 72, 1.5, 80], ["Riz cru", 355, 7, 78, 0.7, 70], ["Semoule cuite", 112, 4, 23, 0.2, 150], ["Boulgour cuit", 83, 3, 18, 0.2, 150],
+  ["Purée de pommes de terre", 85, 2, 13, 3, 200], ["Pommes de terre sautées", 150, 2.5, 22, 6, 200], ["Gnocchi", 135, 3, 30, 0.4, 150], ["Maïs doux", 90, 3, 15, 1.5, 80],
+  ["Wrap / tortilla", 310, 8, 52, 7, 60], ["Pain burger", 270, 9, 48, 4.5, 60],
+  // Fruits
+  ["Fraises", 32, 0.7, 6, 0.3, 150], ["Raisin", 70, 0.7, 16, 0.2, 125], ["Kiwi", 61, 1.1, 11, 0.5, 75], ["Mangue", 60, 0.8, 14, 0.4, 150], ["Ananas", 50, 0.5, 12, 0.1, 150],
+  ["Poire", 57, 0.4, 13, 0.1, 150], ["Pêche", 39, 0.9, 9, 0.3, 150], ["Clémentine", 47, 0.8, 11, 0.2, 70], ["Melon", 34, 0.8, 8, 0.2, 200], ["Pastèque", 30, 0.6, 7, 0.2, 250],
+  ["Myrtilles", 57, 0.7, 12, 0.3, 100], ["Cerises", 63, 1, 14, 0.2, 100], ["Abricot", 48, 1.4, 10, 0.4, 100], ["Dattes", 282, 2.5, 66, 0.4, 30], ["Raisins secs", 300, 3, 69, 0.5, 30],
+  ["Compote de pommes", 70, 0.3, 16, 0.2, 100], ["Jus de pomme", 46, 0.1, 11, 0.1, 250], ["Smoothie", 55, 0.6, 12, 0.2, 250],
+  // Légumes
+  ["Carotte", 36, 0.8, 7, 0.3, 100], ["Concombre", 15, 0.7, 2.5, 0.1, 100], ["Poivron", 26, 1, 5, 0.3, 100], ["Champignons", 22, 3, 1, 0.3, 100], ["Épinards", 23, 3, 1.5, 0.4, 150],
+  ["Petits pois", 80, 5, 11, 0.4, 150], ["Aubergine", 25, 1, 4, 0.2, 150], ["Chou-fleur", 25, 2, 3, 0.3, 150], ["Oignon", 40, 1.1, 8, 0.1, 50], ["Soupe de légumes", 35, 1, 5, 1, 250],
+  ["Ratatouille", 60, 1.2, 6, 3.5, 200], ["Haricots blancs", 110, 7, 16, 0.5, 150],
+  // Plats
+  ["Lasagnes", 160, 8, 13, 8, 300], ["Pâtes bolognaise", 150, 7, 18, 5, 300], ["Pâtes carbonara", 200, 8, 20, 10, 300], ["Quiche lorraine", 270, 9, 18, 18, 150],
+  ["Croque-monsieur", 250, 13, 22, 12, 150], ["Sandwich jambon-beurre", 260, 12, 30, 10, 200], ["Tacos (français)", 230, 10, 22, 11, 400], ["Panini", 270, 12, 30, 11, 200],
+  ["Hot-dog", 260, 10, 25, 13, 150], ["Cheeseburger", 260, 14, 26, 11, 120], ["Big Mac", 230, 12, 19, 12, 220], ["Wrap poulet (fast-food)", 220, 11, 22, 9, 250],
+  ["Sushi / maki", 150, 5, 28, 2, 150], ["Poké bowl", 140, 7, 18, 4, 400], ["Couscous royal", 160, 10, 15, 7, 400], ["Paella", 150, 8, 18, 5, 350],
+  ["Chili con carne", 120, 8, 10, 5, 300], ["Hachis parmentier", 140, 8, 10, 7, 300], ["Gratin dauphinois", 140, 3, 12, 9, 200], ["Omelette", 155, 11, 1, 12, 120],
+  ["Taboulé", 160, 4, 25, 5, 150], ["Riz cantonais", 170, 6, 25, 5, 300], ["Nouilles sautées", 180, 6, 28, 5, 300], ["Salade César", 150, 9, 7, 10, 300], ["Raviolis", 110, 4, 15, 3.5, 300],
+  // Snacks / sucré
+  ["Chips", 536, 6, 52, 34, 30], ["M&M's", 492, 5, 69, 21, 45], ["Kinder Bueno", 572, 8.6, 49.5, 37, 43], ["Twix", 495, 4.5, 64, 24, 50], ["Mars", 449, 4, 70, 17, 45],
+  ["Snickers", 488, 8.6, 60, 23.6, 50], ["KitKat", 518, 6.7, 61, 27, 42], ["Chocolat au lait", 545, 7, 57, 32, 20], ["Barre de céréales", 400, 6, 68, 12, 25],
+  ["Barre protéinée", 360, 30, 35, 12, 60], ["Prince (biscuit)", 470, 6, 69, 18, 30], ["BN", 460, 6, 68, 18, 35], ["Oreo", 480, 5, 69, 20, 22], ["Madeleine", 450, 6, 55, 23, 25],
+  ["Cookie", 480, 5, 63, 23, 25], ["Gâteau au chocolat", 400, 5, 50, 20, 80], ["Glace vanille", 200, 3.5, 24, 10, 80], ["Bonbons", 340, 4, 80, 0, 30], ["Pop-corn sucré", 470, 5, 75, 17, 30],
+  ["Noix", 690, 15, 7, 65, 30], ["Noix de cajou", 590, 18, 30, 46, 30], ["Cacahuètes", 600, 25, 10, 49, 30], ["Pistaches", 590, 20, 17, 46, 30], ["Noisettes", 650, 14, 7, 62, 30],
+  // Boissons
+  ["Ice Tea", 19, 0, 4.5, 0, 330], ["Red Bull", 46, 0, 11, 0, 250], ["Monster Energy", 47, 0, 11, 0, 500], ["Orangina", 41, 0, 10, 0, 330], ["Coca-Cola Zéro", 0.3, 0, 0, 0, 330],
+  ["Sprite", 33, 0, 8, 0, 330], ["Cappuccino", 40, 2, 4, 1.5, 200], ["Café noir", 2, 0.1, 0, 0, 100], ["Vin rouge", 85, 0, 2.6, 0, 150], ["Jus multifruits", 50, 0.4, 11, 0.1, 250],
+  // Sauces
+  ["Mayonnaise", 700, 1, 1, 77, 15], ["Ketchup", 110, 1.2, 25, 0.1, 15], ["Moutarde", 150, 7, 5, 11, 10], ["Sauce soja", 60, 8, 6, 0, 15], ["Vinaigrette", 400, 0.5, 5, 42, 15],
+  ["Pesto", 450, 5, 5, 45, 20], ["Sauce tomate", 50, 1.5, 8, 1, 100], ["Sauce samouraï / algérienne", 520, 1, 10, 52, 20], ["Huile de tournesol", 900, 0, 0, 100, 10],
+);
